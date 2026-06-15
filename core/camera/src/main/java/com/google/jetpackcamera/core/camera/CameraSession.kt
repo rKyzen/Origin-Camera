@@ -380,6 +380,7 @@ internal suspend fun processTransientSettingEvents(
     camera.cameraControl.setZoomRatio(
         initialTransientSettings.zoomRatios[camera.cameraInfo.appLensFacing] ?: 1f
     )
+    camera.cameraControl.setExposureCompensationIndex(initialTransientSettings.exposureCompensation)
 
     val camera2OptionsBuilder = CaptureRequestOptions.Builder()
     updateCamera2RequestOptions(
@@ -451,6 +452,10 @@ internal suspend fun processTransientSettingEvents(
             newTransientSettings.primaryLensFacing.let {
                 camera.cameraControl.setZoomRatio(newTransientSettings.zoomRatios[it] ?: 1f)
             }
+        }
+
+        if (prevTransientSettings.exposureCompensation != newTransientSettings.exposureCompensation) {
+            camera.cameraControl.setExposureCompensationIndex(newTransientSettings.exposureCompensation)
         }
 
         updateCamera2RequestOptions(

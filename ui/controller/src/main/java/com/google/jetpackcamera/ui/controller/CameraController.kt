@@ -45,4 +45,9 @@ interface CameraController {
      * @param deviceRotation The device rotation to set.
      */
     fun setDisplayRotation(deviceRotation: DeviceRotation)
+
+    /**
+     * Sets the exposure compensation index.
+     */
+    fun setExposureCompensation(ev: Int)
 }

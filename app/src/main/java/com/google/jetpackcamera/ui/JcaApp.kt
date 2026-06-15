@@ -57,6 +57,7 @@ fun JcaApp(
     onFirstFrameCaptureCompleted: () -> Unit,
     openAppSettings: () -> Unit,
     onCaptureEvent: (CaptureEvent) -> Unit,
+    onVolumeUpPressed: (() -> Unit) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     JetpackCameraNavHost(
@@ -68,7 +69,8 @@ fun JcaApp(
         onOpenAppSettings = openAppSettings,
         onRequestWindowColorMode = onRequestWindowColorMode,
         onFirstFrameCaptureCompleted = onFirstFrameCaptureCompleted,
-        onCaptureEvent = onCaptureEvent
+        onCaptureEvent = onCaptureEvent,
+        onVolumeUpPressed = onVolumeUpPressed
     )
 }
 
@@ -84,8 +86,17 @@ private fun JetpackCameraNavHost(
     onRequestWindowColorMode: (Int) -> Unit,
     onFirstFrameCaptureCompleted: () -> Unit,
     onCaptureEvent: (CaptureEvent) -> Unit,
+    onVolumeUpPressed: (() -> Unit) -> Unit,
     navController: NavHostController = rememberNavController()
 ) {
+    androidx.compose.runtime.DisposableEffect(navController) {
+        onVolumeUpPressed {
+            navController.navigate(SETTINGS_ROUTE)
+        }
+        onDispose {
+            onVolumeUpPressed {}
+        }
+    }
     NavHost(
         navController = navController,
         startDestination = PermissionsRoute.toString(),

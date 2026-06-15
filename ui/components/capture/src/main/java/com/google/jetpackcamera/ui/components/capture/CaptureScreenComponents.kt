@@ -16,6 +16,8 @@
 package com.google.jetpackcamera.ui.components.capture
 
 import android.content.ContentResolver
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import android.content.pm.ActivityInfo
 import android.os.Build
 import android.util.Log
@@ -469,7 +471,8 @@ fun PreviewDisplay(
     onRequestWindowColorMode: (Int) -> Unit,
     surfaceRequest: SurfaceRequest?,
     focusMeteringUiState: FocusMeteringUiState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    trackpadFocusPosition: Pair<Float, Float>? = null
 ) {
     if (previewDisplayUiState.aspectRatioUiState !is AspectRatioUiState.Available) {
         return
@@ -493,7 +496,11 @@ fun PreviewDisplay(
                     AspectRatioUiState.Available
                 ).selectedAspectRatio
             val maxAspectRatio: Float = maxWidth / maxHeight
-            val aspectRatioFloat: Float = aspectRatio.toFloat()
+            val aspectRatioFloat: Float = if (maxAspectRatio > 1f) {
+                aspectRatio.toLandscapeFloat()
+            } else {
+                aspectRatio.toFloat()
+            }
             val shouldUseMaxWidth = maxAspectRatio <= aspectRatioFloat
             val width = if (shouldUseMaxWidth) maxWidth else maxHeight * aspectRatioFloat
             val height = if (!shouldUseMaxWidth) maxHeight else maxWidth / aspectRatioFloat
@@ -536,6 +543,18 @@ fun PreviewDisplay(
                 )
 
                 val coordinateTransformer = remember { MutableCoordinateTransformer() }
+                val density = LocalDensity.current
+                LaunchedEffect(trackpadFocusPosition) {
+                    trackpadFocusPosition?.let { (rx, ry) ->
+                        val wPx = with(density) { width.toPx() }
+                        val hPx = with(density) { height.toPx() }
+                        with(coordinateTransformer) {
+                            val viewOffset = Offset(rx * wPx, ry * hPx)
+                            val surfaceCoords = viewOffset.transform()
+                            onTapToFocus(surfaceCoords.x, surfaceCoords.y)
+                        }
+                    }
+                }
                 CameraXViewfinder(
                     modifier = Modifier
                         .fillMaxSize()

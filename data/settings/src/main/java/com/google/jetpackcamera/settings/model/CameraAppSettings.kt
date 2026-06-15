@@ -43,7 +43,7 @@ data class CameraAppSettings(
     val darkMode: DarkMode = DarkMode.DARK,
     val flashMode: FlashMode = FlashMode.OFF,
     val streamConfig: StreamConfig = StreamConfig.MULTI_STREAM,
-    val aspectRatio: AspectRatio = AspectRatio.NINE_SIXTEEN,
+    val aspectRatio: AspectRatio = AspectRatio.THREE_FOUR,
     val stabilizationMode: StabilizationMode = StabilizationMode.AUTO,
     val dynamicRange: DynamicRange = DynamicRange.SDR,
     val videoQuality: VideoQuality = VideoQuality.UNSPECIFIED,
@@ -55,7 +55,8 @@ data class CameraAppSettings(
     val concurrentCameraMode: ConcurrentCameraMode = ConcurrentCameraMode.OFF,
     val maxVideoDurationMillis: Long = UNLIMITED_VIDEO_DURATION,
     val lowLightBoostPriority: LowLightBoostPriority = LowLightBoostPriority.PRIORITIZE_AE_MODE,
-    val debugSettings: DebugSettings = DebugSettings()
+    val debugSettings: DebugSettings = DebugSettings(),
+    val exposureCompensation: Int = 0
 )
 
 fun CameraSystemConstraints.forCurrentLens(

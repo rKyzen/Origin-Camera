@@ -103,6 +103,10 @@ class CameraControllerImpl(
         }
     }
 
+    override fun setExposureCompensation(ev: Int) {
+        cameraSystem.setExposureCompensation(ev)
+    }
+
     /**
      * Initiates the cancellation of this controller's scope and returns its Job.
      * To wait for cancellation to complete, call .join() on the returned Job.

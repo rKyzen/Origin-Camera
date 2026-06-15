@@ -77,7 +77,8 @@ internal data class TransientSessionSettings(
     val flashMode: FlashMode,
     val primaryLensFacing: LensFacing,
     val zoomRatios: Map<LensFacing, Float>,
-    val testPattern: TestPattern
+    val testPattern: TestPattern,
+    val exposureCompensation: Int = 0
 )
 
 data class InitialRecordingSettings(

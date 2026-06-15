@@ -40,7 +40,7 @@ class FakeJcaSettingsSerializer(var failReadWithCorruptionException: Boolean = f
         .setDarkModeStatus(DarkMode.DARK_MODE_SYSTEM)
         .setDefaultLensFacing(LensFacing.LENS_FACING_BACK)
         .setFlashModeStatus(FlashMode.FLASH_MODE_OFF)
-        .setAspectRatioStatus(AspectRatio.ASPECT_RATIO_NINE_SIXTEEN)
+        .setAspectRatioStatus(AspectRatio.ASPECT_RATIO_THREE_FOUR)
         .setStreamConfigStatus(StreamConfig.STREAM_CONFIG_MULTI_STREAM)
         .setStabilizationMode(StabilizationMode.STABILIZATION_MODE_AUTO)
         .setDynamicRangeStatus(DynamicRange.DYNAMIC_RANGE_SDR)

@@ -156,6 +156,11 @@ interface CameraSystem {
     fun setFlashMode(flashMode: FlashMode)
 
     /**
+     * Sets the exposure compensation index.
+     */
+    fun setExposureCompensation(ev: Int)
+
+    /**
      * Returns whether screen flash is currently enabled.
      */
     fun isScreenFlashEnabled(): Boolean

@@ -47,4 +47,6 @@ class FakeCameraController(
     override fun setDisplayRotation(deviceRotation: DeviceRotation) {
         setDisplayRotationAction(deviceRotation)
     }
+
+    override fun setExposureCompensation(ev: Int) {}
 }

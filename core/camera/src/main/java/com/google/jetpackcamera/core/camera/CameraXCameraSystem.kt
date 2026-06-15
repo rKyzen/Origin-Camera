@@ -405,7 +405,8 @@ class CameraXCameraSystem(
                     flashMode = currentCameraSettings.flashMode,
                     primaryLensFacing = currentCameraSettings.cameraLensFacing,
                     zoomRatios = currentCameraSettings.defaultZoomRatios,
-                    testPattern = currentCameraSettings.debugSettings.testPattern
+                    testPattern = currentCameraSettings.debugSettings.testPattern,
+                    exposureCompensation = currentCameraSettings.exposureCompensation
                 )
 
                 when (currentCameraSettings.concurrentCameraMode) {
@@ -928,6 +929,12 @@ class CameraXCameraSystem(
             old?.copy(flashMode = flashMode)
                 ?.tryApplyDynamicRangeConstraints()
                 ?.tryApplyConcurrentCameraModeConstraints()
+        }
+    }
+
+    override fun setExposureCompensation(ev: Int) {
+        currentSettings.update { old ->
+            old?.copy(exposureCompensation = ev) ?: old
         }
     }
 

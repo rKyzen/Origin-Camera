@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -382,6 +383,45 @@ private fun ContentScreen(
         }
     }
 
+    // ── Origin Camera state ───────────────────────────────────────────────────
+    val context = LocalContext.current
+    var evIndex by remember { mutableIntStateOf(0) }
+    var trackpadFocusPosition by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+    var shutterSpeed by remember { mutableIntStateOf(60) }
+
+    val onCaptureImage: () -> Unit = {
+        captureController?.captureImage(context.contentResolver)
+    }
+
+    val isVideoMode = (captureUiState.captureModeToggleUiState as?
+        CaptureModeToggleUiState.Available)?.selectedCaptureMode == CaptureMode.VIDEO_ONLY
+
+    val isUltraWide = (captureUiState.flipLensUiState as? FlipLensUiState.Available)
+        ?.selectedLensFacing == com.google.jetpackcamera.model.LensFacing.FRONT
+
+    // Zoom state from camera
+    val zoomUiState = captureUiState.zoomUiState
+    val currentZoom = (captureUiState.zoomControlUiState as?
+        com.google.jetpackcamera.ui.uistate.capture.ZoomControlUiState.Enabled)
+        ?.primaryZoomRatio
+        ?: (zoomUiState as? ZoomUiState.Enabled)?.primaryZoomRatio
+        ?: 1f
+    val zoomRange = (zoomUiState as? ZoomUiState.Enabled)?.primaryZoomRange
+        ?: android.util.Range(1f, 1f)
+
+    val aspectLabel = when (
+        (captureUiState.previewDisplayUiState.aspectRatioUiState as?
+            com.google.jetpackcamera.ui.uistate.capture.AspectRatioUiState.Available)
+            ?.selectedAspectRatio
+    ) {
+        com.google.jetpackcamera.model.AspectRatio.THREE_FOUR   -> "3:4"
+        com.google.jetpackcamera.model.AspectRatio.NINE_SIXTEEN -> "9:16"
+        com.google.jetpackcamera.model.AspectRatio.ONE_ONE      -> "1:1"
+        else -> "3:4"
+    }
+
+    val lensLabel = if (isUltraWide) "13 MM" else "23 MM"
+
     LayoutWrapper(
         modifier = modifier,
         hdrIndicator = { HdrIndicator(modifier = it, hdrUiState = captureUiState.hdrUiState) },
@@ -403,6 +443,54 @@ private fun ContentScreen(
                 stabilizationUiState = captureUiState.stabilizationUiState
             )
         },
+        // Origin Camera params
+        aspectRatioLabel = aspectLabel,
+        lensLabel = lensLabel,
+        currentEvIndex = evIndex,
+        onEvChange = { newEv ->
+            evIndex = newEv
+            cameraController?.setExposureCompensation(newEv)
+        },
+        onCapture = onCaptureImage,
+        isVideoMode = isVideoMode,
+        onToggleCaptureMode = {
+            quickSettingsController?.setCaptureMode(
+                if (isVideoMode) CaptureMode.STANDARD
+                else CaptureMode.VIDEO_ONLY
+            )
+        },
+        isUltraWide = isUltraWide,
+        onFlipLens = onFlipCamera,
+        trackpadFocusPosition = trackpadFocusPosition,
+        onTrackpadFocusChange = { rx, ry ->
+            trackpadFocusPosition = Pair(rx, ry)
+        },
+        // Zoom slider
+        currentZoomRatio = currentZoom,
+        minZoomRatio = zoomRange.lower,
+        maxZoomRatio = zoomRange.upper,
+        onZoomChange = { newZoom ->
+            onAbsoluteZoom(newZoom, LensToZoom.PRIMARY)
+        },
+        // Shutter speed
+        currentShutterSpeed = shutterSpeed,
+        onShutterSpeedChange = { speed ->
+            shutterSpeed = speed
+            // Map shutter speed to exposure compensation:
+            // 60 = 0 EV, 125 = +1, 250 = +2, 30 = -1, 15 = -2
+            val evFromSpeed = when {
+                speed >= 2000 -> 4
+                speed >= 1000 -> 3
+                speed >= 500 -> 2
+                speed >= 250 -> 1
+                speed >= 125 -> 0
+                speed >= 60 -> -1
+                speed >= 30 -> -2
+                else -> -3
+            }
+            evIndex = evFromSpeed
+            cameraController?.setExposureCompensation(evFromSpeed)
+        },
 
         viewfinder = {
             PreviewDisplay(
@@ -412,7 +500,8 @@ private fun ContentScreen(
                 onScaleZoom = { onScaleZoom(it, LensToZoom.PRIMARY) },
                 surfaceRequest = surfaceRequest,
                 onRequestWindowColorMode = onRequestWindowColorMode,
-                focusMeteringUiState = captureUiState.focusMeteringUiState
+                focusMeteringUiState = captureUiState.focusMeteringUiState,
+                trackpadFocusPosition = trackpadFocusPosition
             )
         },
         captureButton = {
@@ -626,27 +715,45 @@ private fun LoadingScreen(modifier: Modifier = Modifier) {
 private fun LayoutWrapper(
     modifier: Modifier = Modifier,
     viewfinder: @Composable (modifier: Modifier) -> Unit,
-    captureButton: @Composable (modifier: Modifier) -> Unit,
-    flipCameraButton: @Composable (modifier: Modifier) -> Unit,
-    zoomLevelDisplay: @Composable (modifier: Modifier) -> Unit,
-    elapsedTimeDisplay: @Composable (modifier: Modifier) -> Unit,
-    quickSettingsButton: @Composable (modifier: Modifier) -> Unit,
-    flashModeIndicator: @Composable (modifier: Modifier) -> Unit,
-    hdrIndicator: @Composable (modifier: Modifier) -> Unit,
-    videoQualityIndicator: @Composable (modifier: Modifier) -> Unit,
-    stabilizationIndicator: @Composable (modifier: Modifier) -> Unit,
-    pauseToggleButton: @Composable (modifier: Modifier) -> Unit,
-    audioToggleButton: @Composable (modifier: Modifier) -> Unit,
-    captureModeToggle: @Composable (modifier: Modifier) -> Unit,
-    imageWell: @Composable (modifier: Modifier) -> Unit,
-    quickSettingsOverlay: @Composable (modifier: Modifier) -> Unit,
+    captureButton: @Composable (modifier: Modifier) -> Unit = {},
+    flipCameraButton: @Composable (modifier: Modifier) -> Unit = {},
+    zoomLevelDisplay: @Composable (modifier: Modifier) -> Unit = {},
+    elapsedTimeDisplay: @Composable (modifier: Modifier) -> Unit = {},
+    quickSettingsButton: @Composable (modifier: Modifier) -> Unit = {},
+    flashModeIndicator: @Composable (modifier: Modifier) -> Unit = {},
+    hdrIndicator: @Composable (modifier: Modifier) -> Unit = {},
+    videoQualityIndicator: @Composable (modifier: Modifier) -> Unit = {},
+    stabilizationIndicator: @Composable (modifier: Modifier) -> Unit = {},
+    pauseToggleButton: @Composable (modifier: Modifier) -> Unit = {},
+    audioToggleButton: @Composable (modifier: Modifier) -> Unit = {},
+    captureModeToggle: @Composable (modifier: Modifier) -> Unit = {},
+    imageWell: @Composable (modifier: Modifier) -> Unit = {},
+    quickSettingsOverlay: @Composable (modifier: Modifier) -> Unit = {},
     debugOverlay: @Composable (
         modifier: Modifier,
         extraButtons: Array<@Composable () -> Unit>?
-    ) -> Unit,
-    debugVisibilityWrapper: (@Composable (@Composable () -> Unit) -> Unit),
-    screenFlashOverlay: @Composable (modifier: Modifier) -> Unit,
-    snackBar: @Composable (modifier: Modifier, snackbarHostState: SnackbarHostState) -> Unit
+    ) -> Unit = { _, _ -> },
+    debugVisibilityWrapper: (@Composable (@Composable () -> Unit) -> Unit) = { it() },
+    screenFlashOverlay: @Composable (modifier: Modifier) -> Unit = {},
+    snackBar: @Composable (modifier: Modifier, snackbarHostState: SnackbarHostState) -> Unit = { _, _ -> },
+    // Origin Camera specific
+    aspectRatioLabel: String = "3:4",
+    lensLabel: String = "23 MM",
+    currentEvIndex: Int = 0,
+    onEvChange: (Int) -> Unit = {},
+    onCapture: () -> Unit = {},
+    isVideoMode: Boolean = false,
+    onToggleCaptureMode: () -> Unit = {},
+    isUltraWide: Boolean = false,
+    onFlipLens: () -> Unit = {},
+    trackpadFocusPosition: Pair<Float, Float>? = null,
+    onTrackpadFocusChange: (Float, Float) -> Unit = { _, _ -> },
+    currentZoomRatio: Float = 1f,
+    minZoomRatio: Float = 1f,
+    maxZoomRatio: Float = 1f,
+    onZoomChange: (Float) -> Unit = {},
+    currentShutterSpeed: Int = 60,
+    onShutterSpeedChange: (Int) -> Unit = {}
 ) {
     PreviewLayout(
         modifier = modifier,
@@ -683,7 +790,24 @@ private fun LayoutWrapper(
         },
         debugVisibilityWrapper = debugVisibilityWrapper,
         screenFlashOverlay = screenFlashOverlay,
-        snackBar = snackBar
+        snackBar = snackBar,
+        // Origin Camera
+        aspectRatioLabel = aspectRatioLabel,
+        lensLabel = lensLabel,
+        currentEvIndex = currentEvIndex,
+        onEvChange = onEvChange,
+        onCapture = onCapture,
+        isVideoMode = isVideoMode,
+        onToggleCaptureMode = onToggleCaptureMode,
+        isUltraWide = isUltraWide,
+        onFlipLens = onFlipLens,
+        onTrackpadFocusChange = onTrackpadFocusChange,
+        currentZoomRatio = currentZoomRatio,
+        minZoomRatio = minZoomRatio,
+        maxZoomRatio = maxZoomRatio,
+        onZoomChange = onZoomChange,
+        currentShutterSpeed = currentShutterSpeed,
+        onShutterSpeedChange = onShutterSpeedChange
     )
 }
 
