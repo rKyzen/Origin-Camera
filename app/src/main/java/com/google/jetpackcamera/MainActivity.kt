@@ -84,22 +84,13 @@ private const val TAG = "MainActivity"
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private val viewModel: MainActivityViewModel by viewModels()
-    private var onVolumeUpPressedListener: (() -> Unit)? = null
-
-    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
-        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) {
-            onVolumeUpPressedListener?.invoke()
-            return true
-        }
-        return super.onKeyDown(keyCode, event)
-    }
 
     @RequiresApi(Build.VERSION_CODES.M)
     @OptIn(ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
         // Hide status bar — full immersive
         window.insetsController?.let { controller ->
@@ -180,9 +171,6 @@ class MainActivity : ComponentActivity() {
                                     firstFrameComplete?.complete(Unit)
                                 },
                                 onCaptureEvent = captureEventCallback,
-                                onVolumeUpPressed = { listener ->
-                                    onVolumeUpPressedListener = listener
-                                }
                             )
                         }
                     }

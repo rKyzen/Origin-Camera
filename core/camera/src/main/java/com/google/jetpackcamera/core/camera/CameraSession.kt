@@ -678,10 +678,7 @@ private fun createImageUseCase(
     builder.setResolutionSelector(
         getResolutionSelector(cameraInfo.sensorLandscapeRatio, aspectRatio)
     )
-    if (dynamicRange != DynamicRange.SDR && imageFormat == ImageOutputFormat.JPEG_ULTRA_HDR
-    ) {
-        builder.setOutputFormat(ImageCapture.OUTPUT_FORMAT_JPEG_ULTRA_HDR)
-    }
+    /* ZERO post-processing — no UltraHDR output format */
     return builder.build()
 }
 

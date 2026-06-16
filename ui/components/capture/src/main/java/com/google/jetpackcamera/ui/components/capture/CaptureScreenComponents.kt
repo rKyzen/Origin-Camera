@@ -87,12 +87,14 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
 import com.google.jetpackcamera.core.camera.VideoRecordingState
@@ -484,26 +486,12 @@ fun PreviewDisplay(
     )
 
     surfaceRequest?.let {
-        BoxWithConstraints(
+        Box(
             modifier
                 .testTag(PREVIEW_DISPLAY)
                 .fillMaxSize()
-                .background(Color.Black),
-            contentAlignment = Alignment.TopCenter
+                .background(Color.Black)
         ) {
-            val aspectRatio = (
-                previewDisplayUiState.aspectRatioUiState as
-                    AspectRatioUiState.Available
-                ).selectedAspectRatio
-            val maxAspectRatio: Float = maxWidth / maxHeight
-            val aspectRatioFloat: Float = if (maxAspectRatio > 1f) {
-                aspectRatio.toLandscapeFloat()
-            } else {
-                aspectRatio.toFloat()
-            }
-            val shouldUseMaxWidth = maxAspectRatio <= aspectRatioFloat
-            val width = if (shouldUseMaxWidth) maxWidth else maxHeight * aspectRatioFloat
-            val height = if (!shouldUseMaxWidth) maxHeight else maxWidth / aspectRatioFloat
             var imageVisible by remember { mutableStateOf(true) }
 
             val imageAlpha: Float by animateFloatAsState(
@@ -523,18 +511,15 @@ fun PreviewDisplay(
                 }
             }
 
+            var previewSize by remember { mutableStateOf(IntSize.Zero) }
             Box(
                 modifier = Modifier
-                    .width(width)
-                    .height(height)
+                    .fillMaxSize()
+                    .onSizeChanged { previewSize = it }
                     .transformable(state = transformableState)
                     .alpha(imageAlpha)
-                    .clip(RoundedCornerShape(16.dp))
             ) {
-                val implementationMode = when {
-                    Build.VERSION.SDK_INT > 24 -> ImplementationMode.EXTERNAL
-                    else -> ImplementationMode.EMBEDDED
-                }
+                val implementationMode = ImplementationMode.EMBEDDED
 
                 DetectWindowColorModeChanges(
                     surfaceRequest = surfaceRequest,
@@ -543,11 +528,10 @@ fun PreviewDisplay(
                 )
 
                 val coordinateTransformer = remember { MutableCoordinateTransformer() }
-                val density = LocalDensity.current
                 LaunchedEffect(trackpadFocusPosition) {
                     trackpadFocusPosition?.let { (rx, ry) ->
-                        val wPx = with(density) { width.toPx() }
-                        val hPx = with(density) { height.toPx() }
+                        val wPx = previewSize.width.toFloat()
+                        val hPx = previewSize.height.toFloat()
                         with(coordinateTransformer) {
                             val viewOffset = Offset(rx * wPx, ry * hPx)
                             val surfaceCoords = viewOffset.transform()
@@ -561,7 +545,6 @@ fun PreviewDisplay(
                         .pointerInput(onFlipCamera) {
                             detectTapGestures(
                                 onDoubleTap = { offset ->
-                                    // double tap to flip camera
                                     Log.d(TAG, "onDoubleTap $offset")
                                     onFlipCamera()
                                 },
@@ -570,8 +553,7 @@ fun PreviewDisplay(
                                         val surfaceCoords = it.transform()
                                         Log.d(
                                             "TAG",
-                                            "onTapToFocus: " +
-                                                "input{$it} -> surface{$surfaceCoords}"
+                                            "onTapToFocus: input{$it} -> surface{$surfaceCoords}"
                                         )
                                         onTapToFocus(surfaceCoords.x, surfaceCoords.y)
                                     }

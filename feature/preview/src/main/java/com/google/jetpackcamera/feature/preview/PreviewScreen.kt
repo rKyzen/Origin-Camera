@@ -19,13 +19,17 @@ import android.Manifest
 import android.os.Build
 import android.util.Log
 import android.util.Range
+import androidx.activity.compose.BackHandler
 import androidx.camera.core.SurfaceRequest
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -81,6 +86,10 @@ import com.google.jetpackcamera.ui.components.capture.FLIP_CAMERA_BUTTON
 import com.google.jetpackcamera.ui.components.capture.FlipCameraButton
 import com.google.jetpackcamera.ui.components.capture.ImageWell
 import com.google.jetpackcamera.ui.components.capture.PauseResumeToggleButton
+import com.google.jetpackcamera.ui.components.capture.FilterItem
+import com.google.jetpackcamera.ui.components.capture.FiltersScreen
+import com.google.jetpackcamera.ui.components.capture.GalleryItem
+import com.google.jetpackcamera.ui.components.capture.GalleryScreen
 import com.google.jetpackcamera.ui.components.capture.PreviewDisplay
 import com.google.jetpackcamera.ui.components.capture.PreviewLayout
 import com.google.jetpackcamera.ui.components.capture.R
@@ -116,6 +125,7 @@ import com.google.jetpackcamera.ui.uistate.capture.ZoomControlUiState
 import com.google.jetpackcamera.ui.uistate.capture.ZoomUiState
 import com.google.jetpackcamera.ui.uistate.capture.compound.CaptureUiState
 import com.google.jetpackcamera.ui.uistate.capture.compound.QuickSettingsUiState
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.launch
 
@@ -129,6 +139,8 @@ private const val TAG = "PreviewScreen"
 fun PreviewScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToPostCapture: () -> Unit,
+    onNavigateToGallery: () -> Unit = {},
+    onNavigateToFilters: () -> Unit = {},
     onCaptureEvent: (CaptureEvent) -> Unit,
     modifier: Modifier = Modifier,
     onRequestWindowColorMode: (Int) -> Unit = {},
@@ -279,7 +291,8 @@ fun PreviewScreen(
                 screenFlashUiState = screenFlashUiState,
                 surfaceRequest = surfaceRequest,
                 onNavigateToSettings = onNavigateToSettings,
-
+                onNavigateToGallery = onNavigateToGallery,
+                onNavigateToFilters = onNavigateToFilters,
                 onAbsoluteZoom = { zoomRatio: Float, lensToZoom: LensToZoom ->
                     scope.launch {
                         zoomStateManager.absoluteZoom(
@@ -339,6 +352,8 @@ fun PreviewScreen(
     }
 }
 
+private enum class OverlayScreen { None, Filters, Gallery }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ContentScreen(
@@ -347,6 +362,8 @@ private fun ContentScreen(
     surfaceRequest: SurfaceRequest?,
     modifier: Modifier = Modifier,
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToGallery: () -> Unit = {},
+    onNavigateToFilters: () -> Unit = {},
     onAbsoluteZoom: (Float, LensToZoom) -> Unit = { _, _ -> },
     onScaleZoom: (Float, LensToZoom) -> Unit = { _, _ -> },
     onIncrementZoom: (Float, LensToZoom) -> Unit = { _, _ -> },
@@ -420,11 +437,31 @@ private fun ContentScreen(
         else -> "3:4"
     }
 
-    val lensLabel = if (isUltraWide) "13 MM" else "23 MM"
+    val lensLabel = buildString {
+        val baseFocalLength = if (isUltraWide) 13f else 23f
+        val effectiveFocalLength = baseFocalLength * currentZoom
+        append("${effectiveFocalLength.roundToInt()} MM")
+    }
 
-    LayoutWrapper(
-        modifier = modifier,
-        hdrIndicator = { HdrIndicator(modifier = it, hdrUiState = captureUiState.hdrUiState) },
+    var overlayScreen by remember { mutableStateOf(OverlayScreen.None) }
+
+    val viewfinderContent: @Composable (Modifier) -> Unit = { modifier ->
+        PreviewDisplay(
+            previewDisplayUiState = captureUiState.previewDisplayUiState,
+            onFlipCamera = onFlipCamera,
+            onTapToFocus = cameraController?.let { it::tapToFocus } ?: { _, _ -> },
+            onScaleZoom = { onScaleZoom(it, LensToZoom.PRIMARY) },
+            surfaceRequest = surfaceRequest,
+            onRequestWindowColorMode = onRequestWindowColorMode,
+            focusMeteringUiState = captureUiState.focusMeteringUiState,
+            trackpadFocusPosition = trackpadFocusPosition
+        )
+    }
+
+    Box(modifier = modifier) {
+        LayoutWrapper(
+            modifier = Modifier,
+            hdrIndicator = { HdrIndicator(modifier = it, hdrUiState = captureUiState.hdrUiState) },
         flashModeIndicator = {
             FlashModeIndicator(
                 modifier = it,
@@ -472,6 +509,10 @@ private fun ContentScreen(
         onZoomChange = { newZoom ->
             onAbsoluteZoom(newZoom, LensToZoom.PRIMARY)
         },
+        // Toolbar
+        onGalleryClick = { overlayScreen = OverlayScreen.Gallery },
+        onFiltersClick = { overlayScreen = OverlayScreen.Filters },
+        onSettingsClick = onNavigateToSettings,
         // Shutter speed
         currentShutterSpeed = shutterSpeed,
         onShutterSpeedChange = { speed ->
@@ -492,18 +533,7 @@ private fun ContentScreen(
             cameraController?.setExposureCompensation(evFromSpeed)
         },
 
-        viewfinder = {
-            PreviewDisplay(
-                previewDisplayUiState = captureUiState.previewDisplayUiState,
-                onFlipCamera = onFlipCamera,
-                onTapToFocus = cameraController?.let { it::tapToFocus } ?: { _, _ -> },
-                onScaleZoom = { onScaleZoom(it, LensToZoom.PRIMARY) },
-                surfaceRequest = surfaceRequest,
-                onRequestWindowColorMode = onRequestWindowColorMode,
-                focusMeteringUiState = captureUiState.focusMeteringUiState,
-                trackpadFocusPosition = trackpadFocusPosition
-            )
-        },
+        viewfinder = if (overlayScreen == OverlayScreen.None) viewfinderContent else { _ -> },
         captureButton = {
             fun runCaptureAction(action: () -> Unit) {
                 if ((captureUiState.quickSettingsUiState as? QuickSettingsUiState.Available)
@@ -695,6 +725,40 @@ private fun ContentScreen(
             }
         }
     )
+
+    BackHandler(enabled = overlayScreen != OverlayScreen.None) {
+        overlayScreen = OverlayScreen.None
+    }
+
+    AnimatedVisibility(
+        visible = overlayScreen == OverlayScreen.Filters,
+        enter = slideInVertically { it },
+        exit = slideOutVertically { it }
+    ) {
+        FiltersScreen(
+            filters = listOf(
+                FilterItem("Green Vibes", "Cinematic\ngreen skies", Color(0xFF4A7A6A)),
+                FilterItem("Retro Field", "Color Filter for\ndigital warmth", Color(0xFF6A5A3A)),
+            ),
+            onGalleryClick = { overlayScreen = OverlayScreen.Gallery },
+            onFiltersClick = { overlayScreen = OverlayScreen.None },
+            onSettingsClick = onNavigateToSettings,
+            onAddFilter = {},
+            onFilterClick = {},
+            viewfinder = viewfinderContent
+        )
+    }
+    AnimatedVisibility(
+        visible = overlayScreen == OverlayScreen.Gallery,
+        enter = slideInVertically { it },
+        exit = slideOutVertically { it }
+    ) {
+        GalleryScreen(
+            items = emptyList(),
+            onBack = { overlayScreen = OverlayScreen.None }
+        )
+    }
+    }
 }
 
 @Composable
@@ -753,62 +817,86 @@ private fun LayoutWrapper(
     maxZoomRatio: Float = 1f,
     onZoomChange: (Float) -> Unit = {},
     currentShutterSpeed: Int = 60,
-    onShutterSpeedChange: (Int) -> Unit = {}
+    onShutterSpeedChange: (Int) -> Unit = {},
+    onGalleryClick: () -> Unit = {},
+    onFiltersClick: () -> Unit = {},
+    onSettingsClick: () -> Unit = {}
 ) {
-    PreviewLayout(
-        modifier = modifier,
-        viewfinder = viewfinder,
-        captureButton = captureButton,
-        imageWell = imageWell,
-        flipCameraButton = flipCameraButton,
-        zoomLevelDisplay = zoomLevelDisplay,
-        elapsedTimeDisplay = elapsedTimeDisplay,
-        quickSettingsButton = quickSettingsButton,
-        captureModeToggle = captureModeToggle,
-        quickSettingsOverlay = quickSettingsOverlay,
-        indicatorRow = { modifier ->
-            Row(
-                modifier = modifier
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                flashModeIndicator(Modifier)
-                hdrIndicator(Modifier)
-                videoQualityIndicator(Modifier)
-                stabilizationIndicator(Modifier)
-            }
-        },
-        debugOverlay = { modifier ->
-            debugOverlay(
-                modifier,
-                arrayOf(
-                    { audioToggleButton(Modifier) },
-                    { pauseToggleButton(Modifier) }
+    val zoomIncrement = 0.15f
+    Box(
+        modifier = modifier.onKeyEvent { event ->
+            if (event.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN) {
+                when (event.nativeKeyEvent.keyCode) {
+                    android.view.KeyEvent.KEYCODE_VOLUME_UP -> {
+                        onZoomChange((currentZoomRatio + zoomIncrement).coerceIn(minZoomRatio, maxZoomRatio))
+                        true
+                    }
+                    android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                        onZoomChange((currentZoomRatio - zoomIncrement).coerceIn(minZoomRatio, maxZoomRatio))
+                        true
+                    }
+                    else -> false
+                }
+            } else false
+        }
+    ) {
+        PreviewLayout(
+            viewfinder = viewfinder,
+            captureButton = captureButton,
+            imageWell = imageWell,
+            flipCameraButton = flipCameraButton,
+            zoomLevelDisplay = zoomLevelDisplay,
+            elapsedTimeDisplay = elapsedTimeDisplay,
+            quickSettingsButton = quickSettingsButton,
+            captureModeToggle = captureModeToggle,
+            quickSettingsOverlay = quickSettingsOverlay,
+            indicatorRow = { modifier ->
+                Row(
+                    modifier = modifier
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    flashModeIndicator(Modifier)
+                    hdrIndicator(Modifier)
+                    videoQualityIndicator(Modifier)
+                    stabilizationIndicator(Modifier)
+                }
+            },
+            debugOverlay = { modifier ->
+                debugOverlay(
+                    modifier,
+                    arrayOf(
+                        { audioToggleButton(Modifier) },
+                        { pauseToggleButton(Modifier) }
+                    )
                 )
-            )
-        },
-        debugVisibilityWrapper = debugVisibilityWrapper,
-        screenFlashOverlay = screenFlashOverlay,
-        snackBar = snackBar,
-        // Origin Camera
-        aspectRatioLabel = aspectRatioLabel,
-        lensLabel = lensLabel,
-        currentEvIndex = currentEvIndex,
-        onEvChange = onEvChange,
-        onCapture = onCapture,
-        isVideoMode = isVideoMode,
-        onToggleCaptureMode = onToggleCaptureMode,
-        isUltraWide = isUltraWide,
-        onFlipLens = onFlipLens,
-        onTrackpadFocusChange = onTrackpadFocusChange,
-        currentZoomRatio = currentZoomRatio,
-        minZoomRatio = minZoomRatio,
-        maxZoomRatio = maxZoomRatio,
-        onZoomChange = onZoomChange,
-        currentShutterSpeed = currentShutterSpeed,
-        onShutterSpeedChange = onShutterSpeedChange
-    )
+            },
+            debugVisibilityWrapper = debugVisibilityWrapper,
+            screenFlashOverlay = screenFlashOverlay,
+            snackBar = snackBar,
+            // Origin Camera
+            aspectRatioLabel = aspectRatioLabel,
+            lensLabel = lensLabel,
+            currentEvIndex = currentEvIndex,
+            onEvChange = onEvChange,
+            onCapture = onCapture,
+            isVideoMode = isVideoMode,
+            onToggleCaptureMode = onToggleCaptureMode,
+            isUltraWide = isUltraWide,
+            onFlipLens = onFlipLens,
+            onTrackpadFocusChange = onTrackpadFocusChange,
+            currentZoomRatio = currentZoomRatio,
+            minZoomRatio = minZoomRatio,
+            maxZoomRatio = maxZoomRatio,
+            onZoomChange = onZoomChange,
+            currentShutterSpeed = currentShutterSpeed,
+            onShutterSpeedChange = onShutterSpeedChange,
+            onGalleryClick = onGalleryClick,
+            onFiltersClick = onFiltersClick,
+            onSettingsClick = onSettingsClick
+        )
+    }
 }
 
 @Preview

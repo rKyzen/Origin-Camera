@@ -18,4 +18,6 @@ package com.google.jetpackcamera.ui
 object Routes {
     const val SETTINGS_ROUTE = "settings"
     const val POST_CAPTURE_ROUTE = "postCapture"
+    const val GALLERY_ROUTE = "gallery"
+    const val FILTERS_ROUTE = "filters"
 }

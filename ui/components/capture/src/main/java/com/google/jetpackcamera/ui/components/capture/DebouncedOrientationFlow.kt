@@ -32,6 +32,21 @@ import kotlinx.coroutines.flow.runningFold
 private const val ORIENTATION_HYSTERESIS = 5
 
 /**
+ * A flow that emits raw device orientation degrees (0-359) from the
+ * [OrientationEventListener], without any snapping or debouncing.
+ * Emits [ORIENTATION_UNKNOWN] when the orientation cannot be determined.
+ */
+fun rawOrientationDegreesFlow(context: Context) = callbackFlow {
+    val orientationListener = object : OrientationEventListener(context) {
+        override fun onOrientationChanged(orientation: Int) {
+            trySend(orientation)
+        }
+    }
+    orientationListener.enable()
+    awaitClose { orientationListener.disable() }
+}.buffer(capacity = CONFLATED)
+
+/**
  * A flow that emits the device's orientation, debounced to avoid rapid changes.
  *
  * @param context the application context

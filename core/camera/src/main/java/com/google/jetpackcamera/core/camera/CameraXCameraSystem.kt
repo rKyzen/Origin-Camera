@@ -624,10 +624,7 @@ class CameraXCameraSystem(
             closeable?.close()
         }.also { outputFileResults ->
             outputFileResults.savedUri?.let {
-                for ((key, value) in imagePostProcessors) {
-                    value.get().postProcessImage(it)
-                    Log.d(TAG, "Post processed image with $key")
-                }
+                /* ZERO post-processing — no ImagePostProcessor invocations */
                 Log.d(TAG, "Saved image to $it")
             }
         }

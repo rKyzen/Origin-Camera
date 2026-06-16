@@ -25,8 +25,7 @@ import com.google.android.gms.cameralowlight.SceneDetectorCallback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 
-private const val PLAY_SERVICES_EFFECT_TARGETS =
-    CameraEffect.PREVIEW or CameraEffect.IMAGE_CAPTURE or CameraEffect.VIDEO_CAPTURE
+private const val PLAY_SERVICES_EFFECT_TARGETS = 0
 
 @SuppressLint("RestrictedApi")
 @RequiresApi(Build.VERSION_CODES.R)
