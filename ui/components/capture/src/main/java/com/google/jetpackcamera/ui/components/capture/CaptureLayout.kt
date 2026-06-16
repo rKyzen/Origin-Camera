@@ -18,9 +18,9 @@ package com.google.jetpackcamera.ui.components.capture
 import android.view.OrientationEventListener.ORIENTATION_UNKNOWN
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -28,9 +28,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -50,35 +49,46 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.roundToInt
 
-val BracketColor = Color(0x80FFFFFF)
 private val ToolbarBg = Color(0xCC1A1A1A)
 private val PillBg = Color(0xE6FFFFFF)
 private val ZoomPillBg = Color(0x99333333)
 private val FrostedPill = Color(0xCC2A2A2A)
-private val FrostedBorder = Color.White.copy(alpha = 0.15f)
+private val BlurPillBg = Color(0x442A2A2A)
+
+val funnelSansFamily = FontFamily(
+    Font(R.font.funnel_sans_regular, FontWeight.Normal),
+    Font(R.font.funnel_sans_medium, FontWeight.Medium),
+    Font(R.font.funnel_sans_semi_bold, FontWeight.SemiBold),
+    Font(R.font.funnel_sans_bold, FontWeight.Bold)
+)
 
 @Composable
 fun PreviewLayout(
@@ -86,7 +96,6 @@ fun PreviewLayout(
     viewfinder: @Composable (Modifier) -> Unit,
     captureButton: @Composable (Modifier) -> Unit = {},
     imageWell: @Composable (Modifier) -> Unit = {},
-    flipCameraButton: @Composable (Modifier) -> Unit = {},
     zoomLevelDisplay: @Composable (Modifier) -> Unit = {},
     elapsedTimeDisplay: @Composable (Modifier) -> Unit = {},
     quickSettingsButton: @Composable (Modifier) -> Unit = {},
@@ -116,7 +125,8 @@ fun PreviewLayout(
     onShutterSpeedChange: (Int) -> Unit = {},
     onGalleryClick: () -> Unit = {},
     onFiltersClick: () -> Unit = {},
-    onSettingsClick: () -> Unit = {}
+    onSettingsClick: () -> Unit = {},
+    deviceOrientation: Int = ORIENTATION_UNKNOWN
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val view = LocalView.current
@@ -125,7 +135,7 @@ fun PreviewLayout(
         onDispose { view.keepScreenOn = false }
     }
 
-    Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
+    Box(modifier = modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -145,20 +155,8 @@ fun PreviewLayout(
                     color = Color.White.copy(alpha = 0.85f),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
+                    fontFamily = funnelSansFamily,
                     modifier = Modifier.align(Alignment.TopCenter).padding(top = 50.dp)
-                )
-
-                var deviceOrientation by remember { mutableIntStateOf(ORIENTATION_UNKNOWN) }
-                val context = LocalContext.current
-                LaunchedEffect(Unit) {
-                    rawOrientationDegreesFlow(context).collect { deviceOrientation = it }
-                }
-
-                LevelIndicator(
-                    deviceOrientation = deviceOrientation,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(width = 160.dp, height = 36.dp)
                 )
 
                 elapsedTimeDisplay(Modifier.align(Alignment.TopCenter).padding(top = 34.dp))
@@ -177,37 +175,44 @@ fun PreviewLayout(
 
                 snackBar(Modifier, snackbarHostState)
                 screenFlashOverlay(Modifier)
+
+                // ── Corner brackets inside viewfinder ────────────────────
+                CornerBrackets(modifier = Modifier.fillMaxSize())
+
+                // ── Level indicator (rotates with device tilt) ─────────
+                LevelIndicator(
+                    deviceOrientation = deviceOrientation,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .fillMaxWidth(0.8f)
+                        .height(54.dp)
+                )
             }
 
-            // ── Shutter + flip: half in viewfinder, half out ────────
+            // ── Shutter: blur pill matching button shape ─────────────
             Box(
                 modifier = Modifier
                     .offset(y = (-39).dp)
-                    .size(width = 220.dp, height = 78.dp),
+                    .size(width = 132.dp, height = 86.dp),
                 contentAlignment = Alignment.Center
             ) {
+                // Blur background — matches button shape, enlarged
                 Box(
                     modifier = Modifier
-                        .size(width = 220.dp, height = 78.dp)
-                        .clip(RoundedCornerShape(39.dp))
-                        .background(FrostedPill)
-                        .border(0.5.dp, FrostedBorder, RoundedCornerShape(39.dp))
+                        .size(width = 132.dp, height = 86.dp)
+                        .clip(RoundedCornerShape(43.dp))
+                        .background(BlurPillBg)
+                        .blur(20.dp)
                 )
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    flipCameraButton(Modifier)
-                    Box(
-                        modifier = Modifier
-                            .size(width = 96.dp, height = 62.dp)
-                            .shadow(8.dp, RoundedCornerShape(31.dp))
-                            .clip(RoundedCornerShape(31.dp))
-                            .background(PillBg)
-                            .pointerInput(Unit) { detectTapGestures { onCapture() } }
-                    )
-                }
+                // Capture button
+                Box(
+                    modifier = Modifier
+                        .size(width = 96.dp, height = 62.dp)
+                        .shadow(8.dp, RoundedCornerShape(31.dp))
+                        .clip(RoundedCornerShape(31.dp))
+                        .background(PillBg)
+                        .pointerInput(Unit) { detectTapGestures { onCapture() } }
+                )
             }
 
             // ── Controls: remaining space ─────────────────────────────
@@ -224,9 +229,6 @@ fun PreviewLayout(
             }
         }
 
-        // ── Corner brackets: full-screen overlay ──────────────────────
-        CornerBrackets(modifier = Modifier.fillMaxSize())
-
         quickSettingsOverlay(Modifier)
         debugOverlay(Modifier)
     }
@@ -234,21 +236,39 @@ fun PreviewLayout(
 
 @Composable
 fun CornerBrackets(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val w = size.width; val h = size.height; val len = 24.dp.toPx(); val s = 2.5.dp.toPx()
-        val margin = 28.dp.toPx()
-        val topY = 18.dp.toPx()
-        val bottomY = h * 0.72f
-        val style = Stroke(s, cap = StrokeCap.Round)
-
-        drawPath(Path().apply { moveTo(margin, topY + len); lineTo(margin, topY); lineTo(margin + len, topY) },
-            BracketColor, style = style)
-        drawPath(Path().apply { moveTo(w - margin - len, topY); lineTo(w - margin, topY); lineTo(w - margin, topY + len) },
-            BracketColor, style = style)
-        drawPath(Path().apply { moveTo(margin, bottomY - len); lineTo(margin, bottomY); lineTo(margin + len, bottomY) },
-            BracketColor, style = style)
-        drawPath(Path().apply { moveTo(w - margin - len, bottomY); lineTo(w - margin, bottomY); lineTo(w - margin, bottomY - len) },
-            BracketColor, style = style)
+    Box(modifier = modifier) {
+        Image(
+            painter = painterResource(R.drawable.ic_bracket_top_left),
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 20.dp, top = 12.dp)
+                .size(48.dp)
+        )
+        Image(
+            painter = painterResource(R.drawable.ic_bracket_top_right),
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 20.dp, top = 12.dp)
+                .size(48.dp)
+        )
+        Image(
+            painter = painterResource(R.drawable.ic_bracket_bottom_left),
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 20.dp, bottom = 12.dp)
+                .size(48.dp)
+        )
+        Image(
+            painter = painterResource(R.drawable.ic_bracket_bottom_right),
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 20.dp, bottom = 12.dp)
+                .size(48.dp)
+        )
     }
 }
 
@@ -288,33 +308,15 @@ fun LevelIndicator(
     )
 
     val isLevel = abs(animatedTilt) < 2f
-    val lineColor = if (isLevel) Color(0xFFFFD700) else Color.White.copy(alpha = 0.55f)
+    val tintColor = if (isLevel) Color(0xFFFFD700) else Color.White.copy(alpha = 0.55f)
 
-    Canvas(modifier = modifier) {
-        val w = size.width; val h = size.height; val s = 1.5.dp.toPx(); val cx = w / 2f; val cy = h / 2f
-        rotate(animatedTilt, pivot = Offset(cx, cy)) {
-            drawRoundRect(lineColor, Offset(w * 0.3f, h * 0.1f), Size(w * 0.4f, h * 0.8f), CornerRadius(12.dp.toPx()), style = Stroke(s))
-            drawLine(lineColor, Offset(0f, cy), Offset(w * 0.28f, cy), s)
-            drawLine(lineColor, Offset(w * 0.72f, cy), Offset(w, cy), s)
-
-            if (!isLevel && !isUnknown) {
-                val as_ = 5.dp.toPx()
-                val sign = if (animatedTilt > 0) 1f else -1f
-                Path().apply {
-                    moveTo(w * 0.28f, cy)
-                    lineTo(w * 0.28f - as_ * 0.5f, cy + sign * as_)
-                    lineTo(w * 0.28f + as_ * 0.5f, cy + sign * as_)
-                    close()
-                }.let { drawPath(it, lineColor) }
-                Path().apply {
-                    moveTo(w * 0.72f, cy)
-                    lineTo(w * 0.72f - as_ * 0.5f, cy - sign * as_)
-                    lineTo(w * 0.72f + as_ * 0.5f, cy - sign * as_)
-                    close()
-                }.let { drawPath(it, lineColor) }
-            }
-        }
-    }
+    Image(
+        painter = painterResource(R.drawable.ic_bracket_middle),
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        colorFilter = ColorFilter.tint(tintColor),
+        modifier = modifier.graphicsLayer { rotationZ = animatedTilt }
+    )
 }
 
 @Composable
@@ -322,46 +324,72 @@ private fun HorizontalZoomSlider(
     currentZoomRatio: Float, minZoomRatio: Float, maxZoomRatio: Float,
     onZoomChange: (Float) -> Unit, modifier: Modifier = Modifier
 ) {
-    val range = maxZoomRatio - minZoomRatio
-    val normalizedPos = if (range > 0f) ((currentZoomRatio - minZoomRatio) / range).coerceIn(0f, 1f) else 0.5f
+    val logMin = ln(minZoomRatio)
+    val logRange = ln(maxZoomRatio / minZoomRatio)
+    val normalizedPos = if (logRange > 0f) (ln(currentZoomRatio) - logMin) / logRange else 0.5f
     val zoomLabel = if (currentZoomRatio <= 1.05f) "1x"
     else if (currentZoomRatio < 10f) "${"%.1f".format(currentZoomRatio)}x"
     else "${currentZoomRatio.roundToInt()}x"
 
     val currentOnZoomChange by rememberUpdatedState(onZoomChange)
+    val smoothPos by animateFloatAsState(
+        targetValue = normalizedPos,
+        animationSpec = tween(120)
+    )
 
     Box(modifier = modifier
             .pointerInput(minZoomRatio, maxZoomRatio) {
                 detectDragGestures(onDrag = { change, _ ->
                     val norm = (change.position.x / size.width).coerceIn(0f, 1f)
-                    currentOnZoomChange(minZoomRatio + norm * range)
+                    currentOnZoomChange(exp(logMin + norm * logRange))
                 })
             },
         contentAlignment = Alignment.Center
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val cy = size.height / 2f; val tc = 25; val sp = size.width / tc
-            for (i in 0 until tc) {
-                val x = i * sp + sp / 2f; val major = i % 5 == 0
+            val w = size.width; val h = size.height; val cy = h / 2f
+            val tickCount = 25
+            val visibleW = w
+            val totalRange = visibleW * 1.6f
+            val spacing = totalRange / (tickCount - 1)
+            val startX = (visibleW - totalRange) / 2f - smoothPos * (totalRange - visibleW)
+
+            for (i in 0 until tickCount) {
+                val x = startX + i * spacing
+                val major = i % 5 == 0
                 val th = if (major) 14.dp.toPx() else 8.dp.toPx()
                 val tw = if (major) 2.dp.toPx() else 1.dp.toPx()
                 val color = if (major) Color.White.copy(0.7f) else Color.White.copy(0.35f)
-                drawRoundRect(color, Offset(x - tw / 2f, cy - th / 2f), Size(tw, th), CornerRadius(tw / 2f))
+                if (x + tw / 2f >= 0 && x - tw / 2f <= visibleW) {
+                    drawRoundRect(color, Offset(x - tw / 2f, cy - th / 2f), Size(tw, th), CornerRadius(tw / 2f))
+                }
             }
         }
         Box(
-            modifier = Modifier.offset(x = ((normalizedPos - 0.5f) * 196).dp)
-                .size(width = 44.dp, height = 26.dp).clip(RoundedCornerShape(13.dp)).background(ZoomPillBg),
+            modifier = Modifier
+                .size(width = 44.dp, height = 26.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(ZoomPillBg),
             contentAlignment = Alignment.Center
-        ) { Text(zoomLabel, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+        ) {
+            Text(
+                text = zoomLabel,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = funnelSansFamily
+            )
+        }
     }
 }
 
+// toolbar icons
 @Composable
 fun BottomToolbar(
     modifier: Modifier = Modifier,
     onGalleryClick: () -> Unit = {},
     onFiltersClick: () -> Unit = {},
+    onEffectsClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {}
 ) {
     Row(modifier = modifier
@@ -370,39 +398,33 @@ fun BottomToolbar(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Gallery (red cube)
-        Box(
+        Image(
+            painter = painterResource(R.drawable.ic_toolbar_gallery),
+            contentDescription = null,
             modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF8B0000))
+                .size(30.dp) // icon size
                 .clickable(onClick = onGalleryClick)
         )
-        // Filters (circles)
-        Canvas(
+        Image(
+            painter = painterResource(R.drawable.ic_toolbar_filters),
+            contentDescription = null,
             modifier = Modifier
-                .size(28.dp)
+                .size(35.dp)
                 .clickable(onClick = onFiltersClick)
-        ) {
-            val r = 8.dp.toPx(); val o = 4.dp.toPx()
-            drawCircle(Color.White.copy(0.7f), r, Offset(size.width / 2f - o, size.height / 2f))
-            drawCircle(Color.White.copy(0.5f), r, Offset(size.width / 2f + o, size.height / 2f - o))
-            drawCircle(Color.White.copy(0.5f), r, Offset(size.width / 2f + o, size.height / 2f + o))
-        }
-        // Sliders (ignore)
-        Canvas(Modifier.size(28.dp)) {
-            val s = 1.5.dp.toPx(); val c = Color.White.copy(0.7f); val ll = 18.dp.toPx(); val sx = (size.width - ll) / 2f
-            for (i in 0..2) { val y = size.height * (0.25f + i * 0.25f); drawLine(c, Offset(sx, y), Offset(sx + ll, y), s); drawCircle(c, 2.dp.toPx(), Offset(sx + ll + 4.dp.toPx(), y)) }
-        }
-        // Settings (circle)
-        Canvas(
+        )
+        Image(
+            painter = painterResource(R.drawable.ic_toolbar_effects),
+            contentDescription = null,
             modifier = Modifier
-                .size(28.dp)
+                .size(35.dp)
+        )
+        Image(
+            painter = painterResource(R.drawable.ic_toolbar_settings),
+            contentDescription = null,
+            modifier = Modifier
+                .size(35.dp)
                 .clickable(onClick = onSettingsClick)
-        ) {
-            val c = Color.White.copy(0.7f); val ct = Offset(size.width / 2f, size.height / 2f); val s = 1.5.dp.toPx()
-            drawCircle(c, 9.dp.toPx(), ct, style = Stroke(s)); drawCircle(c, 5.dp.toPx(), ct, style = Stroke(s))
-        }
+        )
     }
 }
 

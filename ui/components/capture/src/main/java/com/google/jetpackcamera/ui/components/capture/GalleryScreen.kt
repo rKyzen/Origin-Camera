@@ -58,7 +58,8 @@ fun GalleryScreen(
                 text = "Gallery",
                 color = Color.White,
                 fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = funnelSansFamily
             )
         }
 
@@ -103,6 +104,7 @@ private fun GalleryThumbnail(
                 text = item.date,
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 10.sp,
+                fontFamily = funnelSansFamily,
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color.Black.copy(alpha = 0.4f))

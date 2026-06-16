@@ -124,7 +124,8 @@ fun FiltersScreen(
                     text = "Add Color Filter",
                     color = ButtonText,
                     fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    fontFamily = funnelSansFamily
                 )
             }
 
@@ -170,14 +171,16 @@ private fun FilterCard(
                 text = filter.title,
                 color = Color.White,
                 fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = funnelSansFamily
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = filter.subtitle,
                 color = Color.White.copy(alpha = 0.55f),
                 fontSize = 13.sp,
-                lineHeight = 17.sp
+                lineHeight = 17.sp,
+                fontFamily = funnelSansFamily
             )
         }
 

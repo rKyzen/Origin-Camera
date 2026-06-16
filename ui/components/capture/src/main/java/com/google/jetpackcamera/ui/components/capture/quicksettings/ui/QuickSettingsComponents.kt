@@ -100,6 +100,7 @@ import com.google.jetpackcamera.ui.uistate.capture.CaptureModeUiState.Unavailabl
 import com.google.jetpackcamera.ui.uistate.capture.FlashModeUiState
 import com.google.jetpackcamera.ui.uistate.capture.FlipLensUiState
 import com.google.jetpackcamera.ui.uistate.capture.HdrUiState
+import com.google.jetpackcamera.ui.components.capture.funnelSansFamily
 import kotlin.math.min
 
 @Composable
@@ -688,7 +689,7 @@ private fun QuickSettingToggleButton(
                 .width(IntrinsicSize.Max)
                 .wrapContentWidth(),
             text = text,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelMedium.copy(fontFamily = funnelSansFamily),
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             minLines = 2,

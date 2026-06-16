@@ -144,7 +144,8 @@ fun ElapsedTimeText(modifier: Modifier = Modifier, elapsedTimeUiState: ElapsedTi
                 .toComponents { minutes, seconds, _ -> "%02d:%02d".format(minutes, seconds) },
             textAlign = TextAlign.Center,
             style = LocalTextStyle.current.copy(
-                fontFeatureSettings = "tnum"
+                fontFeatureSettings = "tnum",
+                fontFamily = funnelSansFamily
             )
         )
     }

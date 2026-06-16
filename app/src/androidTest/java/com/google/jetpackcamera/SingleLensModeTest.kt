@@ -29,6 +29,7 @@ import com.google.jetpackcamera.utils.TEST_REQUIRED_PERMISSIONS
 import com.google.jetpackcamera.utils.isEmulatorWithFakeFrontCamera
 import com.google.jetpackcamera.utils.runMainActivityScenarioTest
 import com.google.jetpackcamera.utils.waitForCaptureButton
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,6 +54,7 @@ class SingleLensModeTest(private val lensFacing: String) {
     }
 
     @Test
+    @Ignore("Flip camera button removed from UI")
     fun singleLensMode_flipCameraButtonDisabled() {
         val pm = InstrumentationRegistry.getInstrumentation().targetContext.packageManager
 

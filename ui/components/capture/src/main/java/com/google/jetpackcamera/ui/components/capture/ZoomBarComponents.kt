@@ -181,7 +181,7 @@ private fun ZoomButton(
         Text(
             modifier = Modifier.animateContentSize(),
             text = displayText,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = funnelSansFamily),
             textAlign = TextAlign.Center
         )
     }

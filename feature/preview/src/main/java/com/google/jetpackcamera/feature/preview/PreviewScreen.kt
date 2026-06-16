@@ -19,6 +19,7 @@ import android.Manifest
 import android.os.Build
 import android.util.Log
 import android.util.Range
+import android.view.OrientationEventListener.ORIENTATION_UNKNOWN
 import androidx.activity.compose.BackHandler
 import androidx.camera.core.SurfaceRequest
 import androidx.compose.animation.AnimatedVisibility
@@ -82,8 +83,6 @@ import com.google.jetpackcamera.ui.components.capture.CaptureButton
 import com.google.jetpackcamera.ui.components.capture.CaptureModeToggleButton
 import com.google.jetpackcamera.ui.components.capture.ELAPSED_TIME_TAG
 import com.google.jetpackcamera.ui.components.capture.ElapsedTimeText
-import com.google.jetpackcamera.ui.components.capture.FLIP_CAMERA_BUTTON
-import com.google.jetpackcamera.ui.components.capture.FlipCameraButton
 import com.google.jetpackcamera.ui.components.capture.ImageWell
 import com.google.jetpackcamera.ui.components.capture.PauseResumeToggleButton
 import com.google.jetpackcamera.ui.components.capture.FilterItem
@@ -101,6 +100,8 @@ import com.google.jetpackcamera.ui.components.capture.VideoQualityIcon
 import com.google.jetpackcamera.ui.components.capture.ZoomButtonRow
 import com.google.jetpackcamera.ui.components.capture.ZoomStateManager
 import com.google.jetpackcamera.ui.components.capture.debouncedOrientationFlow
+import com.google.jetpackcamera.ui.components.capture.rawOrientationDegreesFlow
+import com.google.jetpackcamera.ui.components.capture.funnelSansFamily
 import com.google.jetpackcamera.ui.components.capture.quicksettings.QuickSettingsBottomSheet
 import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.FlashModeIndicator
 import com.google.jetpackcamera.ui.components.capture.quicksettings.ui.HdrIndicator
@@ -405,6 +406,10 @@ private fun ContentScreen(
     var evIndex by remember { mutableIntStateOf(0) }
     var trackpadFocusPosition by remember { mutableStateOf<Pair<Float, Float>?>(null) }
     var shutterSpeed by remember { mutableIntStateOf(60) }
+    var deviceOrientation by remember { mutableIntStateOf(ORIENTATION_UNKNOWN) }
+    LaunchedEffect(Unit) {
+        rawOrientationDegreesFlow(context).collect { deviceOrientation = it }
+    }
 
     val onCaptureImage: () -> Unit = {
         captureController?.captureImage(context.contentResolver)
@@ -502,6 +507,7 @@ private fun ContentScreen(
         onTrackpadFocusChange = { rx, ry ->
             trackpadFocusPosition = Pair(rx, ry)
         },
+        deviceOrientation = deviceOrientation,
         // Zoom slider
         currentZoomRatio = currentZoom,
         minZoomRatio = zoomRange.lower,
@@ -567,18 +573,6 @@ private fun ContentScreen(
                     captureController?.setLockedRecording(
                         isLocked
                     )
-                }
-            )
-        },
-        flipCameraButton = {
-            FlipCameraButton(
-                modifier = Modifier.testTag(FLIP_CAMERA_BUTTON),
-                onClick = onFlipCamera,
-                flipLensUiState = captureUiState.flipLensUiState,
-                // enable only when phone has front and rear camera
-                enabledCondition = when (val flipLensUiState = captureUiState.flipLensUiState) {
-                    is FlipLensUiState.Available -> flipLensUiState.availableLensFacings.size > 1
-                    FlipLensUiState.Unavailable -> false
                 }
             )
         },
@@ -771,7 +765,7 @@ private fun LoadingScreen(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         CircularProgressIndicator(modifier = Modifier.size(50.dp))
-        Text(text = stringResource(R.string.camera_not_ready), color = Color.White)
+        Text(text = stringResource(R.string.camera_not_ready), color = Color.White, fontFamily = funnelSansFamily)
     }
 }
 
@@ -780,7 +774,6 @@ private fun LayoutWrapper(
     modifier: Modifier = Modifier,
     viewfinder: @Composable (modifier: Modifier) -> Unit,
     captureButton: @Composable (modifier: Modifier) -> Unit = {},
-    flipCameraButton: @Composable (modifier: Modifier) -> Unit = {},
     zoomLevelDisplay: @Composable (modifier: Modifier) -> Unit = {},
     elapsedTimeDisplay: @Composable (modifier: Modifier) -> Unit = {},
     quickSettingsButton: @Composable (modifier: Modifier) -> Unit = {},
@@ -820,7 +813,8 @@ private fun LayoutWrapper(
     onShutterSpeedChange: (Int) -> Unit = {},
     onGalleryClick: () -> Unit = {},
     onFiltersClick: () -> Unit = {},
-    onSettingsClick: () -> Unit = {}
+    onSettingsClick: () -> Unit = {},
+    deviceOrientation: Int = ORIENTATION_UNKNOWN
 ) {
     val zoomIncrement = 0.15f
     Box(
@@ -844,7 +838,6 @@ private fun LayoutWrapper(
             viewfinder = viewfinder,
             captureButton = captureButton,
             imageWell = imageWell,
-            flipCameraButton = flipCameraButton,
             zoomLevelDisplay = zoomLevelDisplay,
             elapsedTimeDisplay = elapsedTimeDisplay,
             quickSettingsButton = quickSettingsButton,
@@ -894,7 +887,8 @@ private fun LayoutWrapper(
             onShutterSpeedChange = onShutterSpeedChange,
             onGalleryClick = onGalleryClick,
             onFiltersClick = onFiltersClick,
-            onSettingsClick = onSettingsClick
+            onSettingsClick = onSettingsClick,
+            deviceOrientation = deviceOrientation
         )
     }
 }
