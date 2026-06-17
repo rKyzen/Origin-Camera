@@ -49,6 +49,7 @@ import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.ViewPort
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.video.ExperimentalPersistentRecording
 import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileDescriptorOutputOptions
@@ -127,7 +128,8 @@ internal suspend fun runSingleCameraSession(
     sessionSettings: PerpetualSessionSettings.SingleCamera,
     cameraConstraints: CameraConstraints?,
     // TODO(tm): ImageCapture should go through an event channel like VideoCapture
-    onImageCaptureCreated: (ImageCapture) -> Unit = {}
+    onImageCaptureCreated: (ImageCapture) -> Unit = {},
+    onCaptureResult: ((TotalCaptureResult) -> Unit)? = null
 ) = coroutineScope {
     Log.d(TAG, "Starting new single camera session")
     val initialCameraSelector = transientSettings.filterNotNull().first()
@@ -182,14 +184,13 @@ internal suspend fun runSingleCameraSession(
                 val cameraId = camera2Info.cameraId
 
                 var cameraEffect: CameraEffect? = null
-                var captureResults: MutableStateFlow<TotalCaptureResult?>? = null
+                val captureResults = MutableStateFlow<TotalCaptureResult?>(null)
                 if (currentTransientSettings.flashMode == FlashMode.LOW_LIGHT_BOOST) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
                         cameraConstraints?.supportedIlluminants?.contains(
                             Illuminant.LOW_LIGHT_BOOST_CAMERA_EFFECT
                         ) == true && lowLightBoostEffectProvider != null
                     ) {
-                        captureResults = MutableStateFlow(null)
                         cameraEffect = lowLightBoostEffectProvider.create(
                             cameraId = cameraId,
                             captureResults = captureResults,
@@ -251,6 +252,12 @@ internal suspend fun runSingleCameraSession(
                             currentCameraState.update { old ->
                                 old.copy(isTorchEnabled = torchState == TorchState.ON)
                             }
+                        }
+                    }
+
+                    launch {
+                        captureResults.filterNotNull().collect { result ->
+                            onCaptureResult?.invoke(result)
                         }
                     }
 
@@ -668,6 +675,7 @@ private fun getHeightFromCropRect(cropRect: Rect?): Int {
     return abs(cropRect.left - cropRect.right)
 }
 
+@OptIn(ExperimentalCamera2Interop::class)
 private fun createImageUseCase(
     cameraInfo: CameraInfo,
     aspectRatio: AspectRatio,
@@ -678,7 +686,16 @@ private fun createImageUseCase(
     builder.setResolutionSelector(
         getResolutionSelector(cameraInfo.sensorLandscapeRatio, aspectRatio)
     )
-    /* ZERO post-processing — no UltraHDR output format */
+    builder.setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+    builder.setJpegQuality(100)
+    Camera2Interop.Extender(builder)
+        .setCaptureRequestOption(CaptureRequest.CONTROL_AE_LOCK, true)
+        .setCaptureRequestOption(CaptureRequest.CONTROL_AWB_LOCK, true)
+        .setCaptureRequestOption(CaptureRequest.EDGE_MODE, CaptureRequest.EDGE_MODE_OFF)
+        .setCaptureRequestOption(
+            CaptureRequest.NOISE_REDUCTION_MODE,
+            CaptureRequest.NOISE_REDUCTION_MODE_FAST
+        )
     return builder.build()
 }
 
@@ -813,7 +830,13 @@ private fun getResolutionSelector(
             }
         }
     }
-    return ResolutionSelector.Builder().setAspectRatioStrategy(aspectRatioStrategy).build()
+    return ResolutionSelector.Builder()
+        .setAspectRatioStrategy(aspectRatioStrategy)
+        .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+        .setAllowedResolutionMode(
+            ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE
+        )
+        .build()
 }
 
 context(CameraSessionContext)

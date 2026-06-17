@@ -289,4 +289,10 @@ class FakeCameraSystem(defaultCameraSettings: CameraAppSettings = CameraAppSetti
             old.copy(captureMode = captureMode)
         }
     }
+
+    override fun setExposureCompensation(ev: Int) {
+        currentSettings.update { old ->
+            old.copy(exposureCompensation = ev)
+        }
+    }
 }

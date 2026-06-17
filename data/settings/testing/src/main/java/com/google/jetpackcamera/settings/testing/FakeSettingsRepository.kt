@@ -104,4 +104,9 @@ object FakeSettingsRepository : SettingsRepository {
         currentCameraSettings =
             currentCameraSettings.copy(concurrentCameraMode = concurrentCameraMode)
     }
+
+    override suspend fun updateMultiFrameStackingEnabled(enabled: Boolean) {
+        currentCameraSettings =
+            currentCameraSettings.copy(isMultiFrameStackingEnabled = enabled)
+    }
 }

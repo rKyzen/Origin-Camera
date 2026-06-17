@@ -54,6 +54,7 @@ import com.google.jetpackcamera.settings.ui.DefaultCameraFacing
 import com.google.jetpackcamera.settings.ui.FlashModeSetting
 import com.google.jetpackcamera.settings.ui.LowLightBoostPrioritySetting
 import com.google.jetpackcamera.settings.ui.MaxVideoDurationSetting
+import com.google.jetpackcamera.settings.ui.MultiFrameStackingSetting
 import com.google.jetpackcamera.settings.ui.RecordingAudioSetting
 import com.google.jetpackcamera.settings.ui.SETTINGS_TITLE
 import com.google.jetpackcamera.settings.ui.SectionHeader
@@ -93,7 +94,8 @@ fun SettingsScreen(
         setDarkMode = viewModel::setDarkMode,
         setVideoQuality = viewModel::setVideoQuality,
         setLowLightBoostPriority = viewModel::setLowLightBoostPriority,
-        setConcurrentCameraMode = viewModel::setConcurrentCameraMode
+        setConcurrentCameraMode = viewModel::setConcurrentCameraMode,
+        setMultiFrameStackingEnabled = viewModel::setMultiFrameStackingEnabled
     )
     val permissionStates = rememberMultiplePermissionsState(
         permissions =
@@ -124,7 +126,8 @@ private fun SettingsScreen(
     setDarkMode: (DarkMode) -> Unit = {},
     setVideoQuality: (VideoQuality) -> Unit = {},
     setLowLightBoostPriority: (LowLightBoostPriority) -> Unit = {},
-    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {}
+    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {},
+    setMultiFrameStackingEnabled: (Boolean) -> Unit = {}
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(
         rememberTopAppBarState()
@@ -162,7 +165,8 @@ private fun SettingsScreen(
                     setDarkMode = setDarkMode,
                     setVideoQuality = setVideoQuality,
                     setLowLightBoostPriority = setLowLightBoostPriority,
-                    setConcurrentCameraMode = setConcurrentCameraMode
+                    setConcurrentCameraMode = setConcurrentCameraMode,
+                    setMultiFrameStackingEnabled = setMultiFrameStackingEnabled
                 )
             }
         }
@@ -184,7 +188,8 @@ internal fun SettingsList(
     setVideoQuality: (VideoQuality) -> Unit = {},
     setMaxVideoDuration: (Long) -> Unit = {},
     setDarkMode: (DarkMode) -> Unit = {},
-    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {}
+    setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {},
+    setMultiFrameStackingEnabled: (Boolean) -> Unit = {}
 ) {
     SectionHeader(title = stringResource(id = R.string.section_title_camera_settings))
 
@@ -216,6 +221,10 @@ internal fun SettingsList(
     LowLightBoostPrioritySetting(
         lowLightBoostPriorityUiState = uiState.lowLightBoostPriorityUiState,
         setLowLightBoostPriority = setLowLightBoostPriority
+    )
+    MultiFrameStackingSetting(
+        enabled = uiState.isMultiFrameStackingEnabled,
+        setEnabled = setMultiFrameStackingEnabled
     )
     SectionHeader(title = stringResource(R.string.section_title_recording_settings))
 

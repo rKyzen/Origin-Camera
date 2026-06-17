@@ -50,4 +50,7 @@ message JcaSettings {
 
   // Non-camera app settings
   DarkMode dark_mode_status = 9;
+
+  // Multi-frame stacking toggle
+  bool is_multi_frame_stacking_enabled = 16;
 }

@@ -934,6 +934,27 @@ internal fun ConcurrentCameraSetting(
 }
 
 @Composable
+internal fun MultiFrameStackingSetting(
+    modifier: Modifier = Modifier,
+    enabled: Boolean,
+    setEnabled: (Boolean) -> Unit
+) {
+    SwitchSettingUI(
+        modifier = modifier.testTag(BTN_SWITCH_SETTING_MULTI_FRAME_STACKING_TAG),
+        title = stringResource(id = R.string.multi_frame_stacking_title),
+        description = if (enabled) {
+            stringResource(R.string.multi_frame_stacking_description_on)
+        } else {
+            stringResource(R.string.multi_frame_stacking_description_off)
+        },
+        leadingIcon = null,
+        onSwitchChanged = setEnabled,
+        settingValue = enabled,
+        enabled = true
+    )
+}
+
+@Composable
 fun VersionInfo(versionName: String, modifier: Modifier = Modifier, buildType: String = "") {
     SettingUI(
         modifier = modifier,

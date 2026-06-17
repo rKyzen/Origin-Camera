@@ -100,7 +100,8 @@ class SettingsViewModel @Inject constructor(
                 lowLightBoostPriorityUiState = LowLightBoostPriorityUiState.Enabled(
                     updatedSettings.lowLightBoostPriority
                 ),
-                concurrentCameraUiState = getConcurrentCameraUiState(constraints, updatedSettings)
+                concurrentCameraUiState = getConcurrentCameraUiState(constraints, updatedSettings),
+                isMultiFrameStackingEnabled = updatedSettings.isMultiFrameStackingEnabled
             )
         }.stateIn(
             scope = viewModelScope,
@@ -741,6 +742,12 @@ class SettingsViewModel @Inject constructor(
     internal fun setConcurrentCameraMode(concurrentCameraMode: ConcurrentCameraMode) {
         viewModelScope.launch {
             settingsRepository.updateConcurrentCameraMode(concurrentCameraMode)
+        }
+    }
+
+    internal fun setMultiFrameStackingEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.updateMultiFrameStackingEnabled(enabled)
         }
     }
 

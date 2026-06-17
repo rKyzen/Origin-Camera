@@ -58,7 +58,8 @@ sealed interface SettingsUiState {
         val videoQualityUiState: VideoQualityUiState,
         val audioUiState: AudioUiState,
         val lowLightBoostPriorityUiState: LowLightBoostPriorityUiState,
-        val concurrentCameraUiState: ConcurrentCameraUiState
+        val concurrentCameraUiState: ConcurrentCameraUiState,
+        val isMultiFrameStackingEnabled: Boolean = false
     ) : SettingsUiState
 }
 
@@ -357,5 +358,6 @@ val TYPICAL_SETTINGS_UISTATE = SettingsUiState.Enabled(
     ),
     concurrentCameraUiState = ConcurrentCameraUiState.Disabled(
         DeviceUnsupportedRationale(R.string.concurrent_camera_rationale_prefix)
-    )
+    ),
+    isMultiFrameStackingEnabled = DEFAULT_CAMERA_APP_SETTINGS.isMultiFrameStackingEnabled
 )

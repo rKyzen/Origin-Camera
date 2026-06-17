@@ -46,6 +46,7 @@ object JcaSettingsSerializer : Serializer<JcaSettings> {
         .setVideoQuality(VideoQuality.VIDEO_QUALITY_UNSPECIFIED)
         .setAudioEnabledStatus(true)
         .setConcurrentCameraModeStatus(ConcurrentCameraModeProto.CONCURRENT_CAMERA_MODE_OFF)
+        .setIsMultiFrameStackingEnabled(false)
         .build()
 
     override suspend fun readFrom(input: InputStream): JcaSettings {

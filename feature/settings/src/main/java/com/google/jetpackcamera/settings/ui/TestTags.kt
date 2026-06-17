@@ -53,6 +53,7 @@ const val ULTRA_HDR_ENABLED_TAG = "UltraHdrEnabledTag"
 const val BTN_SWITCH_SETTING_LENS_FACING_TAG = "btn_switch_setting_lens_facing_tag"
 const val BTN_SWITCH_SETTING_ENABLE_AUDIO_TAG = "btn_switch_setting_enable_audio_tag"
 const val BTN_SWITCH_SETTING_CONCURRENT_CAMERA_TAG = "btn_switch_setting_concurrent_camera_tag"
+const val BTN_SWITCH_SETTING_MULTI_FRAME_STACKING_TAG = "btn_switch_setting_multi_frame_stacking_tag"
 const val TEXT_SETTING_APP_VERSION_TAG = "text_setting_app_version_tag"
 
 // Flash Mode

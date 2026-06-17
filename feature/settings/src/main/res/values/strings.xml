@@ -197,6 +197,11 @@
     <string name="concurrent_camera_stream_config_unsupported">Single Stream does not support concurrent camera</string>
     <string name="stream_config_rationale_prefix">Stream configuration</string>
 
+    <!-- Multi-frame stacking strings -->
+    <string name="multi_frame_stacking_title">Multi-Frame Stacking</string>
+    <string name="multi_frame_stacking_description_on">Enhanced detail via multi-frame capture</string>
+    <string name="multi_frame_stacking_description_off">Standard single-frame capture</string>
+
     <!-- Version info strings -->
     <string name="version_info_title">Version</string>
 </resources>

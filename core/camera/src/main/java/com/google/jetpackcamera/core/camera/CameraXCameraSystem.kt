@@ -19,6 +19,11 @@ import android.app.Application
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
@@ -37,12 +42,17 @@ import androidx.camera.lifecycle.ExperimentalCameraProviderConfiguration
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.lifecycle.awaitInstance
 import androidx.camera.video.Recorder
+import androidx.core.content.ContextCompat
 import androidx.core.net.toFile
 import com.google.jetpackcamera.core.camera.CameraCoreUtil.getAllCamerasPropertiesJSONArray
 import com.google.jetpackcamera.core.camera.CameraCoreUtil.writeFileExternalStorage
 import com.google.jetpackcamera.core.camera.lowlight.LowLightBoostAvailabilityChecker
 import com.google.jetpackcamera.core.camera.lowlight.LowLightBoostEffectProvider
 import com.google.jetpackcamera.core.camera.lowlight.LowLightBoostFeatureKey
+import com.google.jetpackcamera.core.camera.mfs.LensDistortionCorrector
+import com.google.jetpackcamera.core.camera.mfs.LightLevel
+import com.google.jetpackcamera.core.camera.mfs.MfsCapturePipeline
+import com.google.jetpackcamera.core.camera.mfs.MfsConfig
 import com.google.jetpackcamera.core.camera.postprocess.ImagePostProcessor
 import com.google.jetpackcamera.core.camera.postprocess.ImagePostProcessorFeatureKey
 import com.google.jetpackcamera.core.common.DefaultDispatcher
@@ -80,6 +90,7 @@ import com.google.jetpackcamera.settings.model.CameraSystemConstraints
 import com.google.jetpackcamera.settings.model.forCurrentLens
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.FileOutputStream
 import javax.inject.Provider
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.Channel
@@ -115,6 +126,7 @@ class CameraXCameraSystem(
     private lateinit var cameraProvider: ProcessCameraProvider
 
     private var imageCaptureUseCase: ImageCapture? = null
+    private var latestCaptureResult: TotalCaptureResult? = null
 
     private lateinit var systemConstraints: CameraSystemConstraints
 
@@ -489,6 +501,9 @@ class CameraXCameraSystem(
                                     systemConstraints.forCurrentLens(currentSettings.value!!),
                                     onImageCaptureCreated = { imageCapture ->
                                         imageCaptureUseCase = imageCapture
+                                    },
+                                    onCaptureResult = { result ->
+                                        latestCaptureResult = result
                                     }
                                 )
 
@@ -561,6 +576,17 @@ class CameraXCameraSystem(
         saveLocation: SaveLocation,
         onCaptureStarted: (() -> Unit)
     ): ImageCapture.OutputFileResults = imageCaptureUseCase?.let { imageCaptureUseCase ->
+        val mfsEnabled = currentSettings.value?.isMultiFrameStackingEnabled == true
+
+        if (mfsEnabled) {
+            return@let takePictureMfsInternal(
+                imageCaptureUseCase,
+                contentResolver,
+                saveLocation,
+                onCaptureStarted
+            )
+        }
+
         val (outputFileOptions, closeable) = when (saveLocation) {
             is SaveLocation.Default -> {
                 val filename = filePathGenerator.generateImageFilename()
@@ -596,21 +622,14 @@ class CameraXCameraSystem(
             }
 
             is SaveLocation.Cache -> {
-                // 1. Get the app's cache directory
                 val cacheDir = saveLocation.cacheDir?.toFile() ?: application.cacheDir
-
-                // 2. Create a unique temporary file
                 val tempFile = File.createTempFile(
                     "JCA_IMG_CAPTURE_TEMP_",
-                    ".jpg", // Use .jpg to support Ultra HDR
+                    ".jpg",
                     cacheDir
                 )
                 Log.d(TAG, "cached image location: ${tempFile.absolutePath}")
-
-                // 3. Build OutputFileOptions directly with the File object
                 val options = OutputFileOptions.Builder(tempFile).build()
-
-                // 4. Return options. Since CameraX manages the stream, we return null for the 'closeable'.
                 options to null
             }
         }
@@ -629,6 +648,211 @@ class CameraXCameraSystem(
             }
         }
     } ?: throw RuntimeException("Attempted take picture with null imageCapture use case")
+
+    private suspend fun takePictureMfsInternal(
+        imageCaptureUseCase: ImageCapture,
+        contentResolver: ContentResolver,
+        saveLocation: SaveLocation,
+        onCaptureStarted: (() -> Unit)
+    ): ImageCapture.OutputFileResults {
+        Log.d(TAG, "MFS capture started")
+        onCaptureStarted()
+
+        val sensorMP = estimateSensorMP()
+        val liveIso = latestCaptureResult?.get(CaptureResult.SENSOR_SENSITIVITY)
+        val liveZoom = currentCameraState.value.zoomRatios.values.firstOrNull() ?: 1f
+        Log.d(TAG, "MFS: zoom=$liveZoom, ISO=$liveIso")
+        imageCaptureUseCase?.resolutionInfo?.resolution?.let { res ->
+            Log.d(TAG, "MFS capture resolution: ${res.width}x${res.height} (${(res.width * res.height / 1_000_000f)}MP)")
+        }
+        val config = MfsConfig.compute(
+            sensorMP = sensorMP,
+            lightLevel = estimateLightLevel(),
+            zoomFactor = liveZoom,
+            liveIso = liveIso
+        )
+
+        Log.d(TAG, "MFS config: ${config.frameCount} frames, ${config.frameGapMs}ms gap")
+
+        val cameraManager = application.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val cameraId = getCurrentCameraId()
+        val characteristics = cameraId?.let { id ->
+            try { cameraManager.getCameraCharacteristics(id) } catch (e: Exception) { null }
+        }
+        val distortionCorrector = characteristics?.let { LensDistortionCorrector(it) }
+        val pipeline = MfsCapturePipeline(distortionCorrector = distortionCorrector)
+        val executor = ContextCompat.getMainExecutor(application)
+
+        val result = pipeline.captureAndMerge(imageCaptureUseCase, executor, config)
+
+        return result.fold(
+            onSuccess = { bitmap ->
+                val savedUri = saveMfsBitmap(bitmap, contentResolver, saveLocation)
+                ImageCapture.OutputFileResults(savedUri)
+            },
+            onFailure = { error ->
+                Log.w(TAG, "MFS failed, falling back to single frame", error)
+                val (outputFileOptions, closeable) = when (saveLocation) {
+                    is SaveLocation.Default -> {
+                        val filename = filePathGenerator.generateImageFilename()
+                        val contentValues = ContentValues().apply {
+                            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                put(
+                                    MediaStore.Images.Media.RELATIVE_PATH,
+                                    filePathGenerator.relativeImageOutputPath
+                                )
+                            }
+                        }
+                        OutputFileOptions.Builder(
+                            contentResolver,
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                            contentValues
+                        ).build() to null
+                    }
+                    is SaveLocation.Explicit -> {
+                        val outputStream = contentResolver.openOutputStream(
+                            saveLocation.locationUri
+                        ) ?: throw RuntimeException("Provider recently crashed.")
+                        OutputFileOptions.Builder(outputStream).build() to outputStream
+                    }
+                    is SaveLocation.Cache -> {
+                        val cacheDir = saveLocation.cacheDir?.toFile() ?: application.cacheDir
+                        val tempFile = File.createTempFile("JCA_IMG_CAPTURE_TEMP_", ".jpg", cacheDir)
+                        OutputFileOptions.Builder(tempFile).build() to null
+                    }
+                }
+                try {
+                    imageCaptureUseCase.takePicture(outputFileOptions) {
+                        /* MFS fallback, no additional callback */
+                    }
+                } finally {
+                    closeable?.close()
+                }
+            }
+        )
+    }
+
+    private suspend fun saveMfsBitmap(
+        bitmap: android.graphics.Bitmap,
+        contentResolver: ContentResolver,
+        saveLocation: SaveLocation
+    ): Uri? {
+        return when (saveLocation) {
+            is SaveLocation.Default -> {
+                val filename = filePathGenerator.generateImageFilename()
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(
+                            MediaStore.Images.Media.RELATIVE_PATH,
+                            filePathGenerator.relativeImageOutputPath
+                        )
+                    }
+                }
+                val uri = contentResolver.insert(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    contentValues
+                )
+                if (uri != null) {
+                    contentResolver.openOutputStream(uri)?.use { stream ->
+                        bitmap.compress(
+                            android.graphics.Bitmap.CompressFormat.JPEG, 100, stream
+                        )
+                    }
+                }
+                uri
+            }
+
+            is SaveLocation.Explicit -> {
+                val uri = saveLocation.locationUri
+                contentResolver.openOutputStream(uri)?.use { stream ->
+                    bitmap.compress(
+                        android.graphics.Bitmap.CompressFormat.JPEG, 100, stream
+                    )
+                }
+                uri
+            }
+
+            is SaveLocation.Cache -> {
+                val cacheDir = saveLocation.cacheDir?.toFile() ?: application.cacheDir
+                val tempFile = File.createTempFile("JCA_IMG_CAPTURE_TEMP_", ".jpg", cacheDir)
+                FileOutputStream(tempFile).use { stream ->
+                    bitmap.compress(
+                        android.graphics.Bitmap.CompressFormat.JPEG, 100, stream
+                    )
+                }
+                Uri.fromFile(tempFile)
+            }
+        }
+    }
+
+    private fun estimateSensorMP(): Float {
+        return try {
+            val cameraManager = application.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = getCurrentCameraId() ?: return 12f
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val pixelArraySize = characteristics.get(
+                CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE
+            )
+            if (pixelArraySize != null) {
+                val mp = (pixelArraySize.width * pixelArraySize.height) / 1_000_000f
+                mp.coerceIn(1f, 200f)
+            } else {
+                12f
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to estimate sensor MP", e)
+            12f
+        }
+    }
+
+    private fun getCurrentCameraId(): String? {
+        return try {
+            val currentLens = currentSettings.value?.cameraLensFacing ?: return null
+            val cameraInfo = cameraProvider.availableCameraInfos.firstOrNull {
+                it.appLensFacing == currentLens
+            } ?: return null
+            androidx.camera.camera2.interop.Camera2CameraInfo.from(cameraInfo).cameraId
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun estimateLightLevel(): com.google.jetpackcamera.core.camera.mfs.LightLevel {
+        val liveIso = latestCaptureResult?.get(CaptureResult.SENSOR_SENSITIVITY)
+        if (liveIso != null) {
+            return when {
+                liveIso < 100 -> LightLevel.BRIGHT
+                liveIso < 400 -> LightLevel.NORMAL
+                liveIso < 800 -> LightLevel.LOW
+                else -> LightLevel.VERY_LOW
+            }
+        }
+        return try {
+            val cameraManager = application.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = getCurrentCameraId() ?: return LightLevel.NORMAL
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val sensorSensitivity = characteristics.get(
+                CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE
+            )
+            if (sensorSensitivity != null) {
+                val iso = sensorSensitivity.lower
+                when {
+                    iso < 100 -> LightLevel.BRIGHT
+                    iso < 400 -> LightLevel.NORMAL
+                    iso < 800 -> LightLevel.LOW
+                    else -> LightLevel.VERY_LOW
+                }
+            } else {
+                LightLevel.NORMAL
+            }
+        } catch (e: Exception) {
+            LightLevel.NORMAL
+        }
+    }
 
     override suspend fun startVideoRecording(
         saveLocation: SaveLocation,

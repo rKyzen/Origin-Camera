@@ -56,7 +56,8 @@ data class CameraAppSettings(
     val maxVideoDurationMillis: Long = UNLIMITED_VIDEO_DURATION,
     val lowLightBoostPriority: LowLightBoostPriority = LowLightBoostPriority.PRIORITIZE_AE_MODE,
     val debugSettings: DebugSettings = DebugSettings(),
-    val exposureCompensation: Int = 0
+    val exposureCompensation: Int = 0,
+    val isMultiFrameStackingEnabled: Boolean = false
 )
 
 fun CameraSystemConstraints.forCurrentLens(

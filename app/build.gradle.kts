@@ -28,7 +28,7 @@ android {
     namespace = "com.google.jetpackcamera"
 
     defaultConfig {
-        applicationId = "com.google.jetpackcamera"
+        applicationId = "com.origin.camera"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1

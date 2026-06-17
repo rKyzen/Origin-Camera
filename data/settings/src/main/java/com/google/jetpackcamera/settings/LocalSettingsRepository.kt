@@ -95,6 +95,7 @@ class LocalSettingsRepository @Inject constructor(
 
                     else -> ConcurrentCameraMode.OFF
                 },
+                isMultiFrameStackingEnabled = it.isMultiFrameStackingEnabled,
                 captureMode = defaultCaptureModeOverride
             )
         }
@@ -241,6 +242,14 @@ class LocalSettingsRepository @Inject constructor(
         jcaSettings.updateData { currentSettings ->
             currentSettings.toBuilder()
                 .setConcurrentCameraModeStatus(newStatus)
+                .build()
+        }
+    }
+
+    override suspend fun updateMultiFrameStackingEnabled(enabled: Boolean) {
+        jcaSettings.updateData { currentSettings ->
+            currentSettings.toBuilder()
+                .setIsMultiFrameStackingEnabled(enabled)
                 .build()
         }
     }
