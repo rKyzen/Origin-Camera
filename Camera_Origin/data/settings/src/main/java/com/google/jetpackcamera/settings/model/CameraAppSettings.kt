@@ -16,6 +16,8 @@
 package com.google.jetpackcamera.settings.model
 
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CaptureResolutionMode
+import com.google.jetpackcamera.model.ColorScienceMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
@@ -57,7 +59,9 @@ data class CameraAppSettings(
     val lowLightBoostPriority: LowLightBoostPriority = LowLightBoostPriority.PRIORITIZE_AE_MODE,
     val debugSettings: DebugSettings = DebugSettings(),
     val exposureCompensation: Int = 0,
-    val isMultiFrameStackingEnabled: Boolean = false
+    val isMultiFrameStackingEnabled: Boolean = false,
+    val multiFrameStackingResolutionMode: CaptureResolutionMode = CaptureResolutionMode.AUTO,
+    val colorScienceMode: ColorScienceMode = ColorScienceMode.OFF
 )
 
 fun CameraSystemConstraints.forCurrentLens(

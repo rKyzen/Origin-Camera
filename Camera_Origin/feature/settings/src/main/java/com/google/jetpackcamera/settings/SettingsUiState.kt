@@ -16,6 +16,8 @@
 package com.google.jetpackcamera.settings
 
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CaptureResolutionMode
+import com.google.jetpackcamera.model.ColorScienceMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.FlashMode
@@ -59,7 +61,9 @@ sealed interface SettingsUiState {
         val audioUiState: AudioUiState,
         val lowLightBoostPriorityUiState: LowLightBoostPriorityUiState,
         val concurrentCameraUiState: ConcurrentCameraUiState,
-        val isMultiFrameStackingEnabled: Boolean = false
+        val isMultiFrameStackingEnabled: Boolean = false,
+        val mfsResolutionMode: CaptureResolutionMode = CaptureResolutionMode.AUTO,
+        val colorScienceMode: ColorScienceMode = ColorScienceMode.OFF
     ) : SettingsUiState
 }
 
@@ -359,5 +363,6 @@ val TYPICAL_SETTINGS_UISTATE = SettingsUiState.Enabled(
     concurrentCameraUiState = ConcurrentCameraUiState.Disabled(
         DeviceUnsupportedRationale(R.string.concurrent_camera_rationale_prefix)
     ),
-    isMultiFrameStackingEnabled = DEFAULT_CAMERA_APP_SETTINGS.isMultiFrameStackingEnabled
+    isMultiFrameStackingEnabled = DEFAULT_CAMERA_APP_SETTINGS.isMultiFrameStackingEnabled,
+    colorScienceMode = DEFAULT_CAMERA_APP_SETTINGS.colorScienceMode
 )

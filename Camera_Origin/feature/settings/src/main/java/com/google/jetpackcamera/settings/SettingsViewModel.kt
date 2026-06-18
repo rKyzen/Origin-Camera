@@ -23,6 +23,8 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.MultiplePermissionsState
 import com.google.accompanist.permissions.isGranted
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CaptureResolutionMode
+import com.google.jetpackcamera.model.ColorScienceMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DynamicRange
@@ -101,7 +103,9 @@ class SettingsViewModel @Inject constructor(
                     updatedSettings.lowLightBoostPriority
                 ),
                 concurrentCameraUiState = getConcurrentCameraUiState(constraints, updatedSettings),
-                isMultiFrameStackingEnabled = updatedSettings.isMultiFrameStackingEnabled
+                isMultiFrameStackingEnabled = updatedSettings.isMultiFrameStackingEnabled,
+                mfsResolutionMode = updatedSettings.multiFrameStackingResolutionMode,
+                colorScienceMode = updatedSettings.colorScienceMode
             )
         }.stateIn(
             scope = viewModelScope,
@@ -748,6 +752,18 @@ class SettingsViewModel @Inject constructor(
     internal fun setMultiFrameStackingEnabled(enabled: Boolean) {
         viewModelScope.launch {
             settingsRepository.updateMultiFrameStackingEnabled(enabled)
+        }
+    }
+
+    internal fun setMultiFrameStackingResolutionMode(mode: CaptureResolutionMode) {
+        viewModelScope.launch {
+            settingsRepository.updateMultiFrameStackingResolutionMode(mode)
+        }
+    }
+
+    internal fun setColorScienceMode(mode: ColorScienceMode) {
+        viewModelScope.launch {
+            settingsRepository.updateColorScienceMode(mode)
         }
     }
 

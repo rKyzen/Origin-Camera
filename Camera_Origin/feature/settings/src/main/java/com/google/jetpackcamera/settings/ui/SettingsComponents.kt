@@ -60,6 +60,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CaptureResolutionMode
+import com.google.jetpackcamera.model.ColorScienceMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.FlashMode
@@ -951,6 +953,102 @@ internal fun MultiFrameStackingSetting(
         onSwitchChanged = setEnabled,
         settingValue = enabled,
         enabled = true
+    )
+}
+
+@Composable
+internal fun MfsResolutionModeSetting(
+    currentMode: CaptureResolutionMode,
+    setMode: (CaptureResolutionMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BasicPopupSetting(
+        modifier = modifier.testTag(BTN_OPEN_DIALOG_SETTING_MFS_RESOLUTION_MODE_TAG),
+        title = stringResource(R.string.mfs_resolution_mode_title),
+        leadingIcon = null,
+        enabled = true,
+        description = when (currentMode) {
+            CaptureResolutionMode.AUTO -> stringResource(R.string.mfs_resolution_mode_description_auto)
+            CaptureResolutionMode.MAX -> stringResource(R.string.mfs_resolution_mode_description_max)
+            CaptureResolutionMode.HIGH -> stringResource(R.string.mfs_resolution_mode_description_high)
+            CaptureResolutionMode.MEDIUM -> stringResource(R.string.mfs_resolution_mode_description_medium)
+            CaptureResolutionMode.LOW -> stringResource(R.string.mfs_resolution_mode_description_low)
+        },
+        popupContents = {
+            Column(Modifier.selectableGroup()) {
+                SingleChoiceSelector(
+                    modifier = Modifier.testTag(BTN_DIALOG_MFS_RESOLUTION_MODE_OPTION_AUTO_TAG),
+                    text = stringResource(R.string.mfs_resolution_mode_selector_auto),
+                    selected = currentMode == CaptureResolutionMode.AUTO,
+                    enabled = true,
+                    onClick = { setMode(CaptureResolutionMode.AUTO) }
+                )
+                SingleChoiceSelector(
+                    modifier = Modifier.testTag(BTN_DIALOG_MFS_RESOLUTION_MODE_OPTION_MAX_TAG),
+                    text = stringResource(R.string.mfs_resolution_mode_selector_max),
+                    selected = currentMode == CaptureResolutionMode.MAX,
+                    enabled = true,
+                    onClick = { setMode(CaptureResolutionMode.MAX) }
+                )
+                SingleChoiceSelector(
+                    modifier = Modifier.testTag(BTN_DIALOG_MFS_RESOLUTION_MODE_OPTION_HIGH_TAG),
+                    text = stringResource(R.string.mfs_resolution_mode_selector_high),
+                    selected = currentMode == CaptureResolutionMode.HIGH,
+                    enabled = true,
+                    onClick = { setMode(CaptureResolutionMode.HIGH) }
+                )
+                SingleChoiceSelector(
+                    modifier = Modifier.testTag(BTN_DIALOG_MFS_RESOLUTION_MODE_OPTION_MEDIUM_TAG),
+                    text = stringResource(R.string.mfs_resolution_mode_selector_medium),
+                    selected = currentMode == CaptureResolutionMode.MEDIUM,
+                    enabled = true,
+                    onClick = { setMode(CaptureResolutionMode.MEDIUM) }
+                )
+                SingleChoiceSelector(
+                    modifier = Modifier.testTag(BTN_DIALOG_MFS_RESOLUTION_MODE_OPTION_LOW_TAG),
+                    text = stringResource(R.string.mfs_resolution_mode_selector_low),
+                    selected = currentMode == CaptureResolutionMode.LOW,
+                    enabled = true,
+                    onClick = { setMode(CaptureResolutionMode.LOW) }
+                )
+            }
+        }
+    )
+}
+
+@Composable
+internal fun ColorScienceModeSetting(
+    currentMode: ColorScienceMode,
+    setMode: (ColorScienceMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BasicPopupSetting(
+        modifier = modifier.testTag(BTN_OPEN_DIALOG_SETTING_COLOR_SCIENCE_MODE_TAG),
+        title = stringResource(R.string.color_science_mode_title),
+        leadingIcon = null,
+        enabled = true,
+        description = when (currentMode) {
+            ColorScienceMode.OFF -> stringResource(R.string.color_science_mode_description_off)
+            ColorScienceMode.AUTO_TUNED -> stringResource(R.string.color_science_mode_description_auto_tuned)
+        },
+        popupContents = {
+            Column(Modifier.selectableGroup()) {
+                SingleChoiceSelector(
+                    modifier = Modifier.testTag(BTN_DIALOG_COLOR_SCIENCE_MODE_OPTION_OFF_TAG),
+                    text = stringResource(R.string.color_science_mode_selector_off),
+                    selected = currentMode == ColorScienceMode.OFF,
+                    enabled = true,
+                    onClick = { setMode(ColorScienceMode.OFF) }
+                )
+                SingleChoiceSelector(
+                    modifier = Modifier.testTag(BTN_DIALOG_COLOR_SCIENCE_MODE_OPTION_AUTO_TUNED_TAG),
+                    text = stringResource(R.string.color_science_mode_selector_auto_tuned),
+                    selected = currentMode == ColorScienceMode.AUTO_TUNED,
+                    enabled = true,
+                    onClick = { setMode(ColorScienceMode.AUTO_TUNED) }
+                )
+            }
+        }
     )
 }
 

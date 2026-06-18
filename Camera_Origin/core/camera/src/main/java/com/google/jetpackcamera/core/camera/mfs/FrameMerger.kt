@@ -308,6 +308,31 @@ class FrameMerger {
 
     private fun absDiff(a: Int, b: Int): Float = abs(a - b).toFloat()
 
+    private fun estimateNoiseFloor(src: IntArray, w: Int, h: Int): Float {
+        val step = 8
+        var sumMin = 0f
+        var count = 0
+        for (y in step until h - step step step) {
+            for (x in step until w - step step step) {
+                val idx = y * w + x
+                val l = ((src[idx] shr 16 and 0xFF) * 77 +
+                    (src[idx] shr 8 and 0xFF) * 150 +
+                    (src[idx] and 0xFF) * 29) shr 8
+                val lx = ((src[idx - 1] shr 16 and 0xFF) * 77 +
+                    (src[idx - 1] shr 8 and 0xFF) * 150 +
+                    (src[idx - 1] and 0xFF) * 29) shr 8
+                val ly = ((src[idx - w] shr 16 and 0xFF) * 77 +
+                    (src[idx - w] shr 8 and 0xFF) * 150 +
+                    (src[idx - w] and 0xFF) * 29) shr 8
+                val dx = abs(l - lx).toFloat()
+                val dy = abs(l - ly).toFloat()
+                sumMin += minOf(dx, dy)
+                count++
+            }
+        }
+        return if (count > 0) (sumMin / count).coerceIn(1f, 40f) else 5f
+    }
+
     fun preFilterFrame(bitmap: Bitmap): Bitmap {
         val w = bitmap.width
         val h = bitmap.height
@@ -349,6 +374,9 @@ class FrameMerger {
         val src = IntArray(w * h)
         bitmap.getPixels(src, 0, w, 0, 0, w, h)
         val dst = IntArray(w * h)
+
+        val noiseFloor = estimateNoiseFloor(src, w, h)
+        val noiseThreshold = 0.3f + noiseFloor * 0.008f
 
         val radius = 2
         val spatialSigma = 2.5f
@@ -420,7 +448,8 @@ class FrameMerger {
                 val baseGaussianB = (gaussianSumB / gaussianTotalW).toInt().coerceIn(0, 255)
 
                 val edgeActivity = 1f - (bilateralTotalW / gaussianTotalW)
-                val t = (edgeActivity / 0.4f).coerceAtMost(1f)
+                val adjustedEdgeActivity = (edgeActivity - noiseThreshold * 0.3f).coerceAtLeast(0f)
+                val t = (adjustedEdgeActivity / 0.4f).coerceAtMost(1f)
 
                 val denoiseGain = (1f - t) * denoiseStrength
                 val sharpenGain = t * sharpenStrength

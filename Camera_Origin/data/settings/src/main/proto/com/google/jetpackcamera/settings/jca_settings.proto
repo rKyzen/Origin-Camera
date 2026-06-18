@@ -53,4 +53,23 @@ message JcaSettings {
 
   // Multi-frame stacking toggle
   bool is_multi_frame_stacking_enabled = 16;
+
+  // Multi-frame stacking resolution mode
+  MfsResolutionMode mfs_resolution_mode = 17;
+
+  // Color science mode for post-processing
+  ColorScienceModeProto color_science_mode = 18;
+}
+
+enum MfsResolutionMode {
+  MFS_RESOLUTION_MODE_AUTO = 0;
+  MFS_RESOLUTION_MODE_MAX = 1;
+  MFS_RESOLUTION_MODE_HIGH = 2;
+  MFS_RESOLUTION_MODE_MEDIUM = 3;
+  MFS_RESOLUTION_MODE_LOW = 4;
+}
+
+enum ColorScienceModeProto {
+  COLOR_SCIENCE_MODE_OFF = 0;
+  COLOR_SCIENCE_MODE_AUTO_TUNED = 1;
 }

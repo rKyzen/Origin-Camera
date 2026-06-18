@@ -16,6 +16,8 @@
 package com.google.jetpackcamera.settings
 
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CaptureResolutionMode
+import com.google.jetpackcamera.model.ColorScienceMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DynamicRange
@@ -67,4 +69,8 @@ interface SettingsRepository {
     suspend fun updateConcurrentCameraMode(concurrentCameraMode: ConcurrentCameraMode)
 
     suspend fun updateMultiFrameStackingEnabled(enabled: Boolean)
+
+    suspend fun updateMultiFrameStackingResolutionMode(mode: CaptureResolutionMode)
+
+    suspend fun updateColorScienceMode(mode: ColorScienceMode)
 }

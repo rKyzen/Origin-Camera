@@ -39,6 +39,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CaptureResolutionMode
+import com.google.jetpackcamera.model.ColorScienceMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.FlashMode
@@ -48,12 +50,14 @@ import com.google.jetpackcamera.model.StabilizationMode
 import com.google.jetpackcamera.model.StreamConfig
 import com.google.jetpackcamera.model.VideoQuality
 import com.google.jetpackcamera.settings.ui.AspectRatioSetting
+import com.google.jetpackcamera.settings.ui.ColorScienceModeSetting
 import com.google.jetpackcamera.settings.ui.ConcurrentCameraSetting
 import com.google.jetpackcamera.settings.ui.DarkModeSetting
 import com.google.jetpackcamera.settings.ui.DefaultCameraFacing
 import com.google.jetpackcamera.settings.ui.FlashModeSetting
 import com.google.jetpackcamera.settings.ui.LowLightBoostPrioritySetting
 import com.google.jetpackcamera.settings.ui.MaxVideoDurationSetting
+import com.google.jetpackcamera.settings.ui.MfsResolutionModeSetting
 import com.google.jetpackcamera.settings.ui.MultiFrameStackingSetting
 import com.google.jetpackcamera.settings.ui.RecordingAudioSetting
 import com.google.jetpackcamera.settings.ui.SETTINGS_TITLE
@@ -95,7 +99,9 @@ fun SettingsScreen(
         setVideoQuality = viewModel::setVideoQuality,
         setLowLightBoostPriority = viewModel::setLowLightBoostPriority,
         setConcurrentCameraMode = viewModel::setConcurrentCameraMode,
-        setMultiFrameStackingEnabled = viewModel::setMultiFrameStackingEnabled
+        setMultiFrameStackingEnabled = viewModel::setMultiFrameStackingEnabled,
+        setMultiFrameStackingResolutionMode = viewModel::setMultiFrameStackingResolutionMode,
+        setColorScienceMode = viewModel::setColorScienceMode
     )
     val permissionStates = rememberMultiplePermissionsState(
         permissions =
@@ -127,7 +133,9 @@ private fun SettingsScreen(
     setVideoQuality: (VideoQuality) -> Unit = {},
     setLowLightBoostPriority: (LowLightBoostPriority) -> Unit = {},
     setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {},
-    setMultiFrameStackingEnabled: (Boolean) -> Unit = {}
+    setMultiFrameStackingEnabled: (Boolean) -> Unit = {},
+    setMultiFrameStackingResolutionMode: (CaptureResolutionMode) -> Unit = {},
+    setColorScienceMode: (ColorScienceMode) -> Unit = {}
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(
         rememberTopAppBarState()
@@ -166,7 +174,9 @@ private fun SettingsScreen(
                     setVideoQuality = setVideoQuality,
                     setLowLightBoostPriority = setLowLightBoostPriority,
                     setConcurrentCameraMode = setConcurrentCameraMode,
-                    setMultiFrameStackingEnabled = setMultiFrameStackingEnabled
+                    setMultiFrameStackingEnabled = setMultiFrameStackingEnabled,
+                    setMultiFrameStackingResolutionMode = setMultiFrameStackingResolutionMode,
+                    setColorScienceMode = setColorScienceMode
                 )
             }
         }
@@ -189,7 +199,9 @@ internal fun SettingsList(
     setMaxVideoDuration: (Long) -> Unit = {},
     setDarkMode: (DarkMode) -> Unit = {},
     setConcurrentCameraMode: (ConcurrentCameraMode) -> Unit = {},
-    setMultiFrameStackingEnabled: (Boolean) -> Unit = {}
+    setMultiFrameStackingEnabled: (Boolean) -> Unit = {},
+    setMultiFrameStackingResolutionMode: (CaptureResolutionMode) -> Unit = {},
+    setColorScienceMode: (ColorScienceMode) -> Unit = {}
 ) {
     SectionHeader(title = stringResource(id = R.string.section_title_camera_settings))
 
@@ -225,6 +237,14 @@ internal fun SettingsList(
     MultiFrameStackingSetting(
         enabled = uiState.isMultiFrameStackingEnabled,
         setEnabled = setMultiFrameStackingEnabled
+    )
+    MfsResolutionModeSetting(
+        currentMode = uiState.mfsResolutionMode,
+        setMode = setMultiFrameStackingResolutionMode
+    )
+    ColorScienceModeSetting(
+        currentMode = uiState.colorScienceMode,
+        setMode = setColorScienceMode
     )
     SectionHeader(title = stringResource(R.string.section_title_recording_settings))
 

@@ -61,7 +61,10 @@ import com.google.jetpackcamera.core.common.DefaultFilePathGenerator
 import com.google.jetpackcamera.core.common.FilePathGenerator
 import com.google.jetpackcamera.core.common.IODispatcher
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CaptureResolutionMode
+import com.google.jetpackcamera.core.camera.tuning.LookProfile
 import com.google.jetpackcamera.model.CameraZoomRatio
+import com.google.jetpackcamera.model.ColorScienceMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DeviceRotation
@@ -674,12 +677,26 @@ class CameraXCameraSystem(
         imageCaptureUseCase?.resolutionInfo?.resolution?.let { res ->
             Log.d(TAG, "MFS capture resolution: ${res.width}x${res.height} (${(res.width * res.height / 1_000_000f)}MP)")
         }
-        val config = MfsConfig.compute(
+        val resolutionMode = currentSettings.value?.multiFrameStackingResolutionMode
+            ?: CaptureResolutionMode.AUTO
+        val baseConfig = MfsConfig.compute(
             sensorMP = sensorMP,
             lightLevel = estimateLightLevel(),
             zoomFactor = liveZoom,
-            liveIso = liveIso
+            liveIso = liveIso,
+            resolutionMode = resolutionMode
         )
+        val colorScienceMode = currentSettings.value?.colorScienceMode
+        val lookProfile = if (colorScienceMode == ColorScienceMode.AUTO_TUNED) {
+            computeAutoTunedLookProfile(
+                iso = liveIso,
+                zoomFactor = liveZoom,
+                lightLevel = estimateLightLevel()
+            )
+        } else {
+            null
+        }
+        val config = baseConfig.copy(lookProfile = lookProfile)
 
         Log.d(TAG, "MFS config: ${config.frameCount} frames, ${config.frameGapMs}ms gap")
 
@@ -865,6 +882,40 @@ class CameraXCameraSystem(
             Log.w(TAG, "Failed to estimate sensor MP", e)
             12f
         }
+    }
+
+    private fun computeAutoTunedLookProfile(
+        iso: Int?,
+        zoomFactor: Float,
+        lightLevel: com.google.jetpackcamera.core.camera.mfs.LightLevel
+    ): LookProfile {
+        val isoVal = iso?.toFloat() ?: 400f
+        val normalizedIso = (isoVal / 6400f).coerceIn(0f, 1f)
+        val zoomNorm = ((zoomFactor - 1f) / 9f).coerceIn(0f, 1f)
+        val isLowLight = lightLevel == com.google.jetpackcamera.core.camera.mfs.LightLevel.VERY_LOW ||
+            lightLevel == com.google.jetpackcamera.core.camera.mfs.LightLevel.LOW || normalizedIso > 0.5f
+        val isTelephoto = zoomFactor > 3f
+        val brightness = if (isLowLight) 0.42f else 0.58f
+        val contrast = if (isLowLight) 0.18f else 0.12f
+        val saturation = if (isLowLight) 1.28f else 1.15f
+        val baseSharpness = 0.45f - normalizedIso * 0.25f + zoomNorm * 0.15f
+        val sharpness = if (isTelephoto) {
+            (baseSharpness + 0.1f).coerceAtMost(0.9f)
+        } else {
+            baseSharpness.coerceIn(0.2f, 0.8f)
+        }
+        val noiseReduction = if (isLowLight) {
+            (normalizedIso * 0.35f).coerceIn(0.1f, 0.4f)
+        } else {
+            (normalizedIso * 0.15f).coerceIn(0.0f, 0.15f)
+        }
+        return LookProfile(
+            brightness = brightness,
+            contrast = contrast,
+            saturation = saturation,
+            sharpness = sharpness.coerceIn(0.2f, 0.8f),
+            noiseReduction = noiseReduction
+        )
     }
 
     private fun getCurrentCameraId(): String? {

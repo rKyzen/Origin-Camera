@@ -16,6 +16,8 @@
 package com.google.jetpackcamera.settings.testing
 
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CaptureResolutionMode
+import com.google.jetpackcamera.model.ColorScienceMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
 import com.google.jetpackcamera.model.DynamicRange
@@ -108,5 +110,15 @@ object FakeSettingsRepository : SettingsRepository {
     override suspend fun updateMultiFrameStackingEnabled(enabled: Boolean) {
         currentCameraSettings =
             currentCameraSettings.copy(isMultiFrameStackingEnabled = enabled)
+    }
+
+    override suspend fun updateMultiFrameStackingResolutionMode(mode: CaptureResolutionMode) {
+        currentCameraSettings =
+            currentCameraSettings.copy(multiFrameStackingResolutionMode = mode)
+    }
+
+    override suspend fun updateColorScienceMode(mode: ColorScienceMode) {
+        currentCameraSettings =
+            currentCameraSettings.copy(colorScienceMode = mode)
     }
 }

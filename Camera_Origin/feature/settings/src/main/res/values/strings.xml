@@ -201,6 +201,23 @@
     <string name="multi_frame_stacking_title">Multi-Frame Stacking</string>
     <string name="multi_frame_stacking_description_on">Enhanced detail via multi-frame capture</string>
     <string name="multi_frame_stacking_description_off">Standard single-frame capture</string>
+    <string name="mfs_resolution_mode_title">MFS Resolution</string>
+    <string name="mfs_resolution_mode_description_auto">Automatic</string>
+    <string name="mfs_resolution_mode_description_max">Maximum quality</string>
+    <string name="mfs_resolution_mode_description_high">High quality</string>
+    <string name="mfs_resolution_mode_description_medium">Medium quality</string>
+    <string name="mfs_resolution_mode_description_low">Low quality (least memory)</string>
+    <string name="mfs_resolution_mode_selector_auto">Auto</string>
+    <string name="mfs_resolution_mode_selector_max">Max</string>
+    <string name="mfs_resolution_mode_selector_high">High</string>
+    <string name="mfs_resolution_mode_selector_medium">Medium</string>
+    <string name="mfs_resolution_mode_selector_low">Low</string>
+
+    <string name="color_science_mode_title">Color Science</string>
+    <string name="color_science_mode_description_off">No adaptive processing</string>
+    <string name="color_science_mode_description_auto_tuned">Auto-adaptive scene tuning</string>
+    <string name="color_science_mode_selector_off">Off</string>
+    <string name="color_science_mode_selector_auto_tuned">Auto Tuned</string>
 
     <!-- Version info strings -->
     <string name="version_info_title">Version</string>

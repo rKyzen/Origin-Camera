@@ -66,15 +66,35 @@ class MfsCapturePipeline(
                 progressCallback?.onProgress(MfsStage.SAVING, 1, totalFrames)
                 val corrected = distortionCorrector?.correct(frames.first().bitmap)
                     ?: frames.first().bitmap
-                val contrasted = merger.adjustContrast(corrected, 0.12f)
-                val saturated = merger.boostSaturation(contrasted, 1.18f)
+                val look = config.lookProfile
+                val contrastAmount = look?.contrast ?: 0.12f
+                val saturationFactor = look?.saturation ?: 1.18f
+                val contrasted = merger.adjustContrast(corrected, contrastAmount)
+                val saturated = merger.boostSaturation(contrasted, saturationFactor)
                 return@withContext Result.success(saturated)
             }
 
-            val alignFrames = if (config.preFilterStrength > 0f) {
-                frames.map { it.copy(bitmap = merger.preFilterFrame(it.bitmap)) }
+            val processingFrames = if (config.processingScale < 1f) {
+                frames.map { frame ->
+                    val newW = (frame.bitmap.width * config.processingScale).toInt()
+                        .coerceAtLeast(64)
+                    val newH = (frame.bitmap.height * config.processingScale).toInt()
+                        .coerceAtLeast(64)
+                    val scaled = Bitmap.createScaledBitmap(
+                        frame.bitmap, newW, newH, true
+                    )
+                    frame.copy(bitmap = scaled)
+                }
             } else {
                 frames
+            }
+
+            val alignFrames = if (config.preFilterStrength > 0f) {
+                processingFrames.map {
+                    it.copy(bitmap = merger.preFilterFrame(it.bitmap))
+                }
+            } else {
+                processingFrames
             }
             val reference = alignFrames.first()
             val targets = alignFrames.drop(1)
@@ -82,20 +102,27 @@ class MfsCapturePipeline(
             val aligned = aligner.alignFrames(reference, targets)
             val allFrames = listOf(reference) + aligned
             val merged = merger.merge(allFrames, config.mergeStrategy)
-            val enhanced = merger.enhanceDetail(merged, config.denoiseStrength, config.sharpenStrength)
+            val look = config.lookProfile
+            val denoiseStr = look?.noiseReduction ?: config.denoiseStrength
+            val sharpenStr = look?.sharpness ?: config.sharpenStrength
+            val enhanced = merger.enhanceDetail(merged, denoiseStr, sharpenStr)
             val corrected = distortionCorrector?.correct(enhanced) ?: enhanced
-            val contrasted = merger.adjustContrast(corrected, 0.12f)
-            val saturated = merger.boostSaturation(contrasted, 1.18f)
+            val contrastAmount = look?.contrast ?: 0.12f
+            val saturationFactor = look?.saturation ?: 1.18f
+            val contrasted = merger.adjustContrast(corrected, contrastAmount)
+            val saturated = merger.boostSaturation(contrasted, saturationFactor)
 
             progressCallback?.onProgress(MfsStage.SAVING, frames.size, totalFrames)
 
+            val lookLabel = if (look != null) " lookProfile=active" else ""
             Log.d(
                 TAG,
                 "MFS done: ${frames.size}f " +
                     "strat=${config.mergeStrategy} " +
                     "preF=${config.preFilterStrength} " +
-                    "denoise=${config.denoiseStrength} " +
-                    "sharpen=${config.sharpenStrength}"
+                    "denoise=${denoiseStr} " +
+                    "sharpen=${sharpenStr}" +
+                    lookLabel
             )
             Result.success(saturated)
         } catch (e: CancellationException) {

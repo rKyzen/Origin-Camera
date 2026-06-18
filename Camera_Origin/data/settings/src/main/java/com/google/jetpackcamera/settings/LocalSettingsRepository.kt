@@ -18,6 +18,8 @@ package com.google.jetpackcamera.settings
 import androidx.datastore.core.DataStore
 import com.google.jetpackcamera.core.common.DefaultCaptureModeOverride
 import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.CaptureResolutionMode
+import com.google.jetpackcamera.model.ColorScienceMode
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ConcurrentCameraMode
 import com.google.jetpackcamera.model.DarkMode
@@ -96,6 +98,17 @@ class LocalSettingsRepository @Inject constructor(
                     else -> ConcurrentCameraMode.OFF
                 },
                 isMultiFrameStackingEnabled = it.isMultiFrameStackingEnabled,
+                colorScienceMode = when (it.colorScienceMode) {
+                    ColorScienceModeProto.COLOR_SCIENCE_MODE_AUTO_TUNED -> ColorScienceMode.AUTO_TUNED
+                    else -> ColorScienceMode.OFF
+                },
+                multiFrameStackingResolutionMode = when (it.mfsResolutionMode) {
+                    MfsResolutionMode.MFS_RESOLUTION_MODE_MAX -> CaptureResolutionMode.MAX
+                    MfsResolutionMode.MFS_RESOLUTION_MODE_HIGH -> CaptureResolutionMode.HIGH
+                    MfsResolutionMode.MFS_RESOLUTION_MODE_MEDIUM -> CaptureResolutionMode.MEDIUM
+                    MfsResolutionMode.MFS_RESOLUTION_MODE_LOW -> CaptureResolutionMode.LOW
+                    else -> CaptureResolutionMode.AUTO
+                },
                 captureMode = defaultCaptureModeOverride
             )
         }
@@ -250,6 +263,33 @@ class LocalSettingsRepository @Inject constructor(
         jcaSettings.updateData { currentSettings ->
             currentSettings.toBuilder()
                 .setIsMultiFrameStackingEnabled(enabled)
+                .build()
+        }
+    }
+
+    override suspend fun updateMultiFrameStackingResolutionMode(mode: CaptureResolutionMode) {
+        val newStatus = when (mode) {
+            CaptureResolutionMode.AUTO -> MfsResolutionMode.MFS_RESOLUTION_MODE_AUTO
+            CaptureResolutionMode.MAX -> MfsResolutionMode.MFS_RESOLUTION_MODE_MAX
+            CaptureResolutionMode.HIGH -> MfsResolutionMode.MFS_RESOLUTION_MODE_HIGH
+            CaptureResolutionMode.MEDIUM -> MfsResolutionMode.MFS_RESOLUTION_MODE_MEDIUM
+            CaptureResolutionMode.LOW -> MfsResolutionMode.MFS_RESOLUTION_MODE_LOW
+        }
+        jcaSettings.updateData { currentSettings ->
+            currentSettings.toBuilder()
+                .setMfsResolutionMode(newStatus)
+                .build()
+        }
+    }
+
+    override suspend fun updateColorScienceMode(mode: ColorScienceMode) {
+        val newStatus = when (mode) {
+            ColorScienceMode.OFF -> ColorScienceModeProto.COLOR_SCIENCE_MODE_OFF
+            ColorScienceMode.AUTO_TUNED -> ColorScienceModeProto.COLOR_SCIENCE_MODE_AUTO_TUNED
+        }
+        jcaSettings.updateData { currentSettings ->
+            currentSettings.toBuilder()
+                .setColorScienceMode(newStatus)
                 .build()
         }
     }

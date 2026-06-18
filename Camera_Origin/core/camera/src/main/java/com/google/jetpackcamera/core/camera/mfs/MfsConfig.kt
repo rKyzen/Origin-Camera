@@ -1,5 +1,7 @@
 package com.google.jetpackcamera.core.camera.mfs
 
+import com.google.jetpackcamera.core.camera.tuning.LookProfile
+import com.google.jetpackcamera.model.CaptureResolutionMode
 import kotlin.math.roundToLong
 import kotlin.math.sqrt
 
@@ -13,7 +15,9 @@ data class MfsConfig(
     val mergeStrategy: MergeStrategy,
     val preFilterStrength: Float,
     val denoiseStrength: Float,
-    val sharpenStrength: Float
+    val sharpenStrength: Float,
+    val processingScale: Float = 1.0f,
+    val lookProfile: LookProfile? = null
 ) {
     companion object {
         private const val REFERENCE_MP = 12f
@@ -30,7 +34,8 @@ data class MfsConfig(
             sensorMP: Float,
             lightLevel: LightLevel,
             zoomFactor: Float,
-            liveIso: Int? = null
+            liveIso: Int? = null,
+            resolutionMode: CaptureResolutionMode = CaptureResolutionMode.AUTO
         ): MfsConfig {
             val baseFrames = when (lightLevel) {
                 LightLevel.BRIGHT -> BASE_FRAMES_BRIGHT
@@ -69,12 +74,14 @@ data class MfsConfig(
                 else -> 0.0f
             }
 
-            val sharpenStrength = when {
-                zoomFactor > 5f -> 0.8f
-                zoomFactor > 3f -> 0.7f
-                lightLevel == LightLevel.VERY_LOW -> 0.4f
-                else -> 0.5f
-            }
+            val sharpenStrength = computeSharpenStrength(zoomFactor, lightLevel, liveIso)
+
+            val processingScale = MfsResolutionPolicy.resolveScale(
+                sensorMp = sensorMP,
+                zoomFactor = zoomFactor,
+                lightLevel = lightLevel,
+                mode = resolutionMode
+            )
 
             val frameGapMs = computeFrameGap(
                 lightLevel = lightLevel,
@@ -89,7 +96,8 @@ data class MfsConfig(
                 mergeStrategy = if (zoomScaled >= 3) MergeStrategy.MOTION_AWARE else MergeStrategy.WEIGHTED,
                 preFilterStrength = preFilterStrength,
                 denoiseStrength = denoiseStrength,
-                sharpenStrength = sharpenStrength
+                sharpenStrength = sharpenStrength,
+                processingScale = processingScale
             )
         }
 
@@ -121,6 +129,35 @@ data class MfsConfig(
             val rawGap = baseGap + isoPenalty + mpPenalty
             val maxGap = MAX_TOTAL_CAPTURE_MS / frameCount
             return rawGap.coerceIn(MIN_FRAME_GAP_MS, maxGap)
+        }
+
+        private fun computeSharpenStrength(
+            zoomFactor: Float,
+            lightLevel: LightLevel,
+            liveIso: Int?
+        ): Float {
+            var strength = 0.4f
+
+            val zoomBoost = (sqrt(zoomFactor.coerceAtLeast(1f)) - 1f) * 0.3f
+            strength += zoomBoost.coerceIn(0f, 0.4f)
+
+            val noisePenalty = when {
+                liveIso != null -> when {
+                    liveIso > 3200 -> 0.35f
+                    liveIso > 1600 -> 0.25f
+                    liveIso > 800 -> 0.15f
+                    liveIso > 400 -> 0.05f
+                    else -> 0f
+                }
+                else -> when (lightLevel) {
+                    LightLevel.VERY_LOW -> 0.3f
+                    LightLevel.LOW -> 0.15f
+                    else -> 0f
+                }
+            }
+            strength -= noisePenalty
+
+            return strength.coerceIn(0.1f, 0.9f)
         }
     }
 }
