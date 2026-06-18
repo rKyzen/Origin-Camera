@@ -1,0 +1,118 @@
+name: Presubmit
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner (host machine) to use for all jobs in presubmit"
+        required: false
+        type: string
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JDK_VERSION: 17
+  DISTRIBUTION: 'zulu'
+
+jobs:
+  choose_runner:
+    name: Choose Runner
+    uses: ./.github/workflows/ChooseRunner.yaml
+    with:
+      forced_runner: ${{ inputs.runner }}
+
+  build:
+    name: Build
+    needs: choose_runner
+    runs-on: ${{ needs.choose_runner.outputs.chosen_runner }}
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: ${{ env.DISTRIBUTION }}
+          java-version: ${{ env.JDK_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Build stable debug gradle target
+        run: ./gradlew assembleStableDebug --parallel --build-cache
+
+      - name: Upload build outputs (APKs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-outputs
+          path: app/build/outputs
+
+      - name: Upload build reports
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: "*/build/reports"
+
+  test:
+    name: Unit Tests
+    needs: choose_runner
+    runs-on: ${{ needs.choose_runner.outputs.chosen_runner }}
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: ${{ env.DISTRIBUTION }}
+          java-version: ${{ env.JDK_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+        continue-on-error: true
+
+      - name: Run local tests
+        run: ./gradlew test --parallel --build-cache
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: "*/build/reports/tests"
+
+  spotless:
+    name: Spotless Check
+    needs: choose_runner
+    runs-on: ${{ needs.choose_runner.outputs.chosen_runner }}
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: ${{ env.DISTRIBUTION }}
+          java-version: ${{ env.JDK_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Spotless Check
+        run: ./gradlew spotlessCheck --init-script gradle/init.gradle.kts --parallel --build-cache

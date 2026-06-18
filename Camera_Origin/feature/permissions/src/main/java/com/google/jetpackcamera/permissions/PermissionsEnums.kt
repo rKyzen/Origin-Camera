@@ -1,0 +1,132 @@
+/*
+ * Copyright (C) 2024 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.google.jetpackcamera.permissions
+
+import android.Manifest
+import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.res.painterResource
+import com.google.jetpackcamera.permissions.ui.CAMERA_PERMISSION_BUTTON
+import com.google.jetpackcamera.permissions.ui.RECORD_AUDIO_PERMISSION_BUTTON
+import com.google.jetpackcamera.permissions.ui.WRITE_EXTERNAL_STORAGE_PERMISSION_BUTTON
+
+/**
+ * Helper class storing a permission's relevant UI information
+ */
+sealed interface PermissionInfoProvider {
+    @Composable
+    fun getPainter(): Painter = painterResource(getDrawableResId())
+
+    /**
+     * @return the String reference for the permission
+     */
+    fun getPermission(): String
+
+    fun isOptional(): Boolean
+
+    fun getTestTag(): String
+
+    @DrawableRes
+    fun getDrawableResId(): Int
+
+    @StringRes
+    fun getPermissionTitleResId(): Int
+
+    @StringRes
+    fun getPermissionBodyTextResId(): Int
+
+    @StringRes
+    fun getRationaleBodyTextResId(): Int?
+
+    @StringRes
+    fun getIconAccessibilityTextResId(): Int
+}
+
+/**
+ * Implementation of [PermissionInfoProvider]
+ * Supplies the information needed for a permission's UI screen
+ */
+enum class PermissionEnum : PermissionInfoProvider {
+
+    CAMERA {
+        override fun getPermission(): String = Manifest.permission.CAMERA
+
+        override fun isOptional(): Boolean = false
+
+        override fun getTestTag(): String = CAMERA_PERMISSION_BUTTON
+
+        override fun getDrawableResId(): Int = R.drawable.ic_camera_alt
+
+        override fun getPermissionTitleResId(): Int = R.string.camera_permission_screen_title
+
+        override fun getPermissionBodyTextResId(): Int =
+            R.string.camera_permission_required_rationale
+
+        override fun getRationaleBodyTextResId(): Int =
+            R.string.camera_permission_declined_rationale
+
+        override fun getIconAccessibilityTextResId(): Int =
+            R.string.camera_permission_accessibility_text
+    },
+
+    RECORD_AUDIO {
+        override fun getPermission(): String = Manifest.permission.RECORD_AUDIO
+
+        override fun isOptional(): Boolean = true
+
+        override fun getTestTag(): String = RECORD_AUDIO_PERMISSION_BUTTON
+
+        override fun getDrawableResId(): Int = R.drawable.ic_mic
+
+        override fun getPermissionTitleResId(): Int = R.string.microphone_permission_screen_title
+
+        override fun getPermissionBodyTextResId(): Int =
+            R.string.microphone_permission_required_rationale
+
+        override fun getRationaleBodyTextResId(): Int? = null
+
+        override fun getIconAccessibilityTextResId(): Int =
+            R.string.microphone_permission_accessibility_text
+    },
+
+    WRITE_STORAGE {
+        override fun getPermission(): String = Manifest.permission.WRITE_EXTERNAL_STORAGE
+
+        override fun isOptional(): Boolean = true
+
+        override fun getTestTag(): String = WRITE_EXTERNAL_STORAGE_PERMISSION_BUTTON
+
+        override fun getDrawableResId(): Int = R.drawable.ic_create_new_folder
+
+        override fun getPermissionTitleResId(): Int = R.string.write_storage_permission_screen_title
+
+        override fun getPermissionBodyTextResId(): Int =
+            R.string.write_storage_permission_required_rationale
+
+        override fun getRationaleBodyTextResId(): Int? = null
+
+        override fun getIconAccessibilityTextResId(): Int =
+            R.string.write_storage_permission_accessibility_text
+    };
+
+    companion object {
+        fun fromString(permission: String): PermissionEnum =
+            entries.firstOrNull { it.getPermission() == permission }
+                ?: throw IllegalArgumentException("Unknown permission: $permission")
+    }
+}
