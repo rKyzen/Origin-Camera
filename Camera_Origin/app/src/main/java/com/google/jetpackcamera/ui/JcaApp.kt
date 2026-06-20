@@ -44,10 +44,7 @@ import com.google.jetpackcamera.permissions.navigation.permissionsScreen
 import com.google.jetpackcamera.permissions.navigation.popUpToPermissions
 import com.google.jetpackcamera.settings.SettingsScreen
 import com.google.jetpackcamera.settings.VersionInfoHolder
-import com.google.jetpackcamera.ui.components.capture.FilterItem
-import com.google.jetpackcamera.ui.components.capture.FiltersScreen
 import com.google.jetpackcamera.ui.components.capture.GalleryScreen
-import com.google.jetpackcamera.ui.Routes.FILTERS_ROUTE
 import com.google.jetpackcamera.ui.Routes.GALLERY_ROUTE
 import com.google.jetpackcamera.ui.Routes.POST_CAPTURE_ROUTE
 import com.google.jetpackcamera.ui.Routes.SETTINGS_ROUTE
@@ -125,7 +122,6 @@ private fun JetpackCameraNavHost(
             onNavigateToSettings = { navController.navigate(SETTINGS_ROUTE) },
             onNavigateToPostCapture = { navController.navigate(POST_CAPTURE_ROUTE) },
             onNavigateToGallery = { navController.navigate(GALLERY_ROUTE) },
-            onNavigateToFilters = { navController.navigate(FILTERS_ROUTE) },
             onNavigateToPermissions = {
                 navController.navigateToPermissions {
                     popUpToPreview()
@@ -185,34 +181,6 @@ private fun JetpackCameraNavHost(
                 items = emptyList(),
                 onItemClick = {},
                 onBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = FILTERS_ROUTE,
-            enterTransition = {
-                slideIntoContainer(
-                    animationSpec = tween(350, easing = EaseOut),
-                    towards = AnimatedContentTransitionScope.SlideDirection.Up
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    animationSpec = tween(300, easing = EaseIn),
-                    towards = AnimatedContentTransitionScope.SlideDirection.Down
-                )
-            }
-        ) {
-            FiltersScreen(
-                filters = listOf(
-                    FilterItem("Green Vibes", "Cinematic\ngreen skies", androidx.compose.ui.graphics.Color(0xFF4A7A6A)),
-                    FilterItem("Retro Field", "Color Filter for\ndigital warmth", androidx.compose.ui.graphics.Color(0xFF6A5A3A)),
-                ),
-                onFilterClick = {},
-                onAddFilter = {},
-                onGalleryClick = { navController.popBackStack() },
-                onFiltersClick = { navController.popBackStack() },
-                onSettingsClick = { navController.popBackStack() }
             )
         }
     }

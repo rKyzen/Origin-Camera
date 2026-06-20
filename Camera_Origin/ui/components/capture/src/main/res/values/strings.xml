@@ -125,4 +125,28 @@
 
     <!-- ImageWell -->
     <string name="image_well_content_description">View recently saved media</string>
+
+    <!-- Quick Controls Panel -->
+    <string name="quick_controls_title">Quick Controls</string>
+    <string name="quick_controls_done">Done</string>
+    <string name="quick_controls_ev_label">Exposure</string>
+    <string name="quick_controls_ev_min">-4</string>
+    <string name="quick_controls_ev_max">+4</string>
+    <string name="quick_controls_mfs_label">Multi-Frame Stacking</string>
+    <string name="quick_controls_mfs_description">Enhance quality with frame merging</string>
+    <string name="quick_controls_color_science_label">Color Science</string>
+    <string name="quick_controls_color_science_off">Off</string>
+    <string name="quick_controls_color_science_auto">Auto Tuned</string>
+
+    <!-- Quick Controls Tray - Aspect Ratio -->
+    <string name="quick_controls_aspect_ratio_label">Aspect Ratio</string>
+    <string name="quick_controls_aspect_ratio_3_4">3:4</string>
+    <string name="quick_controls_aspect_ratio_1_1">1:1</string>
+    <string name="quick_controls_aspect_ratio_9_16">9:16</string>
+
+    <!-- Quick Controls Tray - Flash -->
+    <string name="quick_controls_flash_label">Flash</string>
+
+    <!-- Gallery -->
+    <string name="gallery_no_photos">No photos available</string>
 </resources>

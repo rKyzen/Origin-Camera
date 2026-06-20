@@ -17,6 +17,7 @@ package com.google.jetpackcamera.ui.controller
 
 import android.content.ContentResolver
 import com.google.jetpackcamera.model.CaptureEvent
+import com.google.jetpackcamera.model.FilterPreset
 import kotlinx.coroutines.channels.ReceiveChannel
 
 /**
@@ -51,6 +52,13 @@ interface CaptureController {
      * @param isLocked True if the recording should be locked, false otherwise.
      */
     fun setLockedRecording(isLocked: Boolean)
+
+    /**
+     * Sets the active [FilterPreset] for captured images.
+     */
+    fun setFilterPreset(preset: FilterPreset) {
+        // Default no-op; overridden in CaptureControllerImpl
+    }
 
     /**
      * Pauses or resumes video recording.

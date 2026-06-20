@@ -27,22 +27,13 @@ import androidx.camera.core.SurfaceRequest
 import androidx.camera.viewfinder.compose.CoordinateTransformer
 import androidx.camera.viewfinder.compose.MutableCoordinateTransformer
 import androidx.camera.viewfinder.core.ImplementationMode
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOutExpo
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -130,8 +121,6 @@ import kotlinx.coroutines.flow.onCompletion
 
 private const val TAG = "PreviewScreen"
 private const val BLINK_TIME = 100L
-private val TAP_TO_FOCUS_INDICATOR_SIZE = 56.dp
-private const val FOCUS_INDICATOR_RESULT_DELAY = 100L
 
 /**
  * A composable that displays the elapsed time of a video recording in a "MM:SS" format.
@@ -479,6 +468,7 @@ fun PreviewDisplay(
     surfaceRequest: SurfaceRequest?,
     focusMeteringUiState: FocusMeteringUiState,
     modifier: Modifier = Modifier,
+    coordinateTransformer: MutableCoordinateTransformer = MutableCoordinateTransformer(),
     trackpadFocusPosition: Pair<Float, Float>? = null
 ) {
     if (previewDisplayUiState.aspectRatioUiState !is AspectRatioUiState.Available) {
@@ -532,7 +522,6 @@ fun PreviewDisplay(
                     onRequestWindowColorMode = onRequestWindowColorMode
                 )
 
-                val coordinateTransformer = remember { MutableCoordinateTransformer() }
                 LaunchedEffect(trackpadFocusPosition) {
                     trackpadFocusPosition?.let { (rx, ry) ->
                         val wPx = previewSize.width.toFloat()
@@ -567,10 +556,6 @@ fun PreviewDisplay(
                         },
                     surfaceRequest = it,
                     implementationMode = implementationMode,
-                    coordinateTransformer = coordinateTransformer
-                )
-                FocusMeteringIndicator(
-                    focusMeteringUiState = focusMeteringUiState,
                     coordinateTransformer = coordinateTransformer
                 )
             }
@@ -835,91 +820,6 @@ fun FlipCameraButton(
                 modifier = Modifier
                     .size(IconButtonDefaults.extraLargeIconSize)
                     .rotate(animatedRotation.value)
-            )
-        }
-    }
-}
-
-/**
- * A composable that displays an indicator on the viewfinder when the user taps to focus.
- *
- * @param focusMeteringUiState The state of the focus metering operation.
- * @param coordinateTransformer The coordinate transformer to use to map the surface coordinates
- * to screen coordinates. This should come from [CameraXViewfinder].
- */
-@Composable
-private fun FocusMeteringIndicator(
-    focusMeteringUiState: FocusMeteringUiState,
-    coordinateTransformer: CoordinateTransformer
-) {
-    if (focusMeteringUiState is FocusMeteringUiState.Specified) {
-        val transition = rememberInfiniteTransition(label = "FocusPulse")
-        val alpha by transition.animateFloat(
-            initialValue = 1f,
-            targetValue = 0.5f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(500),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "FocusPulseAlpha"
-        )
-
-        // The indicator for SUCCESS/FAILURE is shown for a short duration
-        var showResultIndicator by remember { mutableStateOf(false) }
-        val status = focusMeteringUiState.status
-        LaunchedEffect(status) {
-            if (status == FocusMeteringUiState.Status.SUCCESS ||
-                status == FocusMeteringUiState.Status.FAILURE
-            ) {
-                showResultIndicator = true
-                delay(FOCUS_INDICATOR_RESULT_DELAY)
-                showResultIndicator = false
-            } else {
-                showResultIndicator = false
-            }
-        }
-        // Map coordinates from surface coordinates back to screen coordinates
-        val tapCoords =
-            remember(
-                coordinateTransformer.transformMatrix,
-                focusMeteringUiState.surfaceCoordinates
-            ) {
-                Matrix().run {
-                    setFrom(coordinateTransformer.transformMatrix)
-                    invert()
-                    map(focusMeteringUiState.surfaceCoordinates)
-                }
-            }
-        val showFocusMeteringIndicator = status == FocusMeteringUiState.Status.RUNNING
-        AnimatedVisibility(
-            visible = showFocusMeteringIndicator || showResultIndicator,
-            enter = fadeIn() + scaleIn(initialScale = 1.5f),
-            exit = fadeOut() + when (focusMeteringUiState.status) {
-                FocusMeteringUiState.Status.SUCCESS -> scaleOut(targetScale = 0.5f)
-                FocusMeteringUiState.Status.FAILURE -> scaleOut(targetScale = 1.5f)
-                else -> fadeOut()
-            },
-            modifier = Modifier
-                .offset { tapCoords.round() }
-                // Offset the indicator to be centered on the tap coordinates
-                .offset(-TAP_TO_FOCUS_INDICATOR_SIZE / 2, -TAP_TO_FOCUS_INDICATOR_SIZE / 2)
-        ) {
-            Box(
-                Modifier
-                    .testTag(FOCUS_METERING_INDICATOR_TAG)
-                    .alpha(
-                        if (focusMeteringUiState.status == FocusMeteringUiState.Status.SUCCESS) {
-                            1f
-                        } else {
-                            alpha
-                        }
-                    )
-                    .border(
-                        1.dp,
-                        Color.White,
-                        CircleShape
-                    )
-                    .size(TAP_TO_FOCUS_INDICATOR_SIZE)
             )
         }
     }

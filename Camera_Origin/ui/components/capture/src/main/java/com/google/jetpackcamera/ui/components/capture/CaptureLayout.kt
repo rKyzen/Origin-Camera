@@ -16,6 +16,8 @@
 package com.google.jetpackcamera.ui.components.capture
 
 import android.view.OrientationEventListener.ORIENTATION_UNKNOWN
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOutExpo
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,6 +49,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -61,9 +65,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -71,7 +77,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
@@ -108,6 +118,7 @@ fun PreviewLayout(
     snackBar: @Composable (Modifier, snackbarHostState: SnackbarHostState) -> Unit = { _, _ -> },
     aspectRatioLabel: String = "3:4",
     lensLabel: String = "23 MM",
+    viewfinderAspectRatio: Float = 3f / 4f,
     currentEvIndex: Int = 0,
     onEvChange: (Int) -> Unit = {},
     onCapture: () -> Unit = {},
@@ -125,8 +136,15 @@ fun PreviewLayout(
     onShutterSpeedChange: (Int) -> Unit = {},
     onGalleryClick: () -> Unit = {},
     onFiltersClick: () -> Unit = {},
+    onEffectsClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
-    deviceOrientation: Int = ORIENTATION_UNKNOWN
+    deviceOrientation: Int = ORIENTATION_UNKNOWN,
+    isQuickControlsExpanded: Boolean = false,
+    quickControlsTray: @Composable () -> Unit = {},
+    onShutterTap: () -> Unit = onCapture,
+    onBackClick: () -> Unit = {},
+    focusMeteringUiState: com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState = com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState.Unspecified,
+    coordinateTransformer: androidx.camera.viewfinder.compose.CoordinateTransformer = androidx.camera.viewfinder.compose.MutableCoordinateTransformer()
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val view = LocalView.current
@@ -135,20 +153,37 @@ fun PreviewLayout(
         onDispose { view.keepScreenOn = false }
     }
 
+    val viewfinderHeightFraction by animateFloatAsState(
+        targetValue = if (isQuickControlsExpanded) 0.45f else 0.80f,
+        animationSpec = tween(
+            durationMillis = 300,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing
+        ),
+        label = "viewfinderHeight"
+    )
+
     Box(modifier = modifier.fillMaxSize().background(Color.Black).statusBarsPadding()) {
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── Viewfinder: 80% of screen ──────────────────────────────
+            // ── Viewfinder: fixed container, aspect ratio inside ──────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 10.dp)
-                    .fillMaxHeight(0.80f)
+                    .fillMaxHeight(viewfinderHeightFraction)
                     .clip(RoundedCornerShape(40.dp))
+                    .background(Color.Black)
             ) {
-                viewfinder(Modifier.fillMaxSize())
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .aspectRatio(viewfinderAspectRatio)
+                        .align(Alignment.Center)
+                ) {
+                    viewfinder(Modifier.fillMaxSize())
+                }
 
                 Text(
                     text = "$aspectRatioLabel  $lensLabel",
@@ -177,7 +212,11 @@ fun PreviewLayout(
                 screenFlashOverlay(Modifier)
 
                 // ── Corner brackets inside viewfinder ────────────────────
-                CornerBrackets(modifier = Modifier.fillMaxSize())
+                CornerBrackets(
+                    modifier = Modifier.fillMaxSize(),
+                    focusMeteringUiState = focusMeteringUiState,
+                    coordinateTransformer = coordinateTransformer
+                )
 
                 // ── Level indicator (rotates with device tilt) ─────────
                 LevelIndicator(
@@ -189,14 +228,13 @@ fun PreviewLayout(
                 )
             }
 
-            // ── Shutter: blur pill matching button shape ─────────────
+            // ── Shutter / Back toggle ──────────────────────────────────
             Box(
                 modifier = Modifier
-                    .offset(y = (-39).dp)
+                    .let { if (isQuickControlsExpanded) it else it.offset(y = (-39).dp) }
                     .size(width = 132.dp, height = 86.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // Blur background — matches button shape, enlarged
                 Box(
                     modifier = Modifier
                         .size(width = 132.dp, height = 86.dp)
@@ -204,16 +242,28 @@ fun PreviewLayout(
                         .background(BlurPillBg)
                         .blur(20.dp)
                 )
-                // Capture button
                 Box(
                     modifier = Modifier
                         .size(width = 96.dp, height = 62.dp)
                         .shadow(8.dp, RoundedCornerShape(31.dp))
                         .clip(RoundedCornerShape(31.dp))
-                        .background(PillBg)
-                        .pointerInput(Unit) { detectTapGestures { onCapture() } }
-                )
+                        .background(if (isQuickControlsExpanded) Color(0xFF2A2A2A) else PillBg)
+                        .clickable { onShutterTap() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isQuickControlsExpanded) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_arrow_back),
+                            contentDescription = null,
+                            modifier = Modifier.size(26.dp),
+                            colorFilter = ColorFilter.tint(Color.White)
+                        )
+                    }
+                }
             }
+
+            // ── Quick Controls Tray ──────────────────────────────────
+            quickControlsTray()
 
             // ── Controls: remaining space ─────────────────────────────
             Box(
@@ -224,6 +274,7 @@ fun PreviewLayout(
                     modifier = Modifier.padding(top = 8.dp),
                     onGalleryClick = onGalleryClick,
                     onFiltersClick = onFiltersClick,
+                    onEffectsClick = onEffectsClick,
                     onSettingsClick = onSettingsClick
                 )
             }
@@ -235,39 +286,139 @@ fun PreviewLayout(
 }
 
 @Composable
-fun CornerBrackets(modifier: Modifier = Modifier) {
-    Box(modifier = modifier) {
+fun CornerBrackets(
+    modifier: Modifier = Modifier,
+    focusMeteringUiState: com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState = com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState.Unspecified,
+    coordinateTransformer: androidx.camera.viewfinder.compose.CoordinateTransformer = androidx.camera.viewfinder.compose.MutableCoordinateTransformer()
+) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val bracketSizePx = with(density) { 48.dp.toPx() }
+    val focusBoxHalfPx = with(density) { 40.dp.toPx() }
+    val padX = with(density) { 20.dp.toPx() }
+    val padY = with(density) { 12.dp.toPx() }
+
+    var containerW by remember { mutableFloatStateOf(0f) }
+    var containerH by remember { mutableFloatStateOf(0f) }
+
+    val tlX = remember { Animatable(0f) }
+    val tlY = remember { Animatable(0f) }
+    val trX = remember { Animatable(0f) }
+    val trY = remember { Animatable(0f) }
+    val blX = remember { Animatable(0f) }
+    val blY = remember { Animatable(0f) }
+    val brX = remember { Animatable(0f) }
+    val brY = remember { Animatable(0f) }
+
+    val defaultTl = remember(containerW, containerH) { Offset(padX, padY) }
+    val defaultTr = remember(containerW, containerH) { Offset(containerW - padX - bracketSizePx, padY) }
+    val defaultBl = remember(containerW, containerH) { Offset(padX, containerH - padY - bracketSizePx) }
+    val defaultBr = remember(containerW, containerH) { Offset(containerW - padX - bracketSizePx, containerH - padY - bracketSizePx) }
+
+    val animSpec = tween<Float>(200, easing = EaseOutExpo)
+
+    val status = if (focusMeteringUiState is com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState.Specified)
+        focusMeteringUiState.status else null
+
+    var showResult by remember { mutableStateOf(false) }
+
+    LaunchedEffect(status) {
+        when (status) {
+            com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState.Status.SUCCESS,
+            com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState.Status.FAILURE -> {
+                showResult = true
+                delay(500L)
+                showResult = false
+            }
+            else -> showResult = false
+        }
+    }
+
+    LaunchedEffect(focusMeteringUiState, containerW, containerH) {
+        if (focusMeteringUiState !is com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState.Specified ||
+            containerW == 0f || containerH == 0f) {
+            launch { tlX.animateTo(defaultTl.x, animSpec) }
+            launch { tlY.animateTo(defaultTl.y, animSpec) }
+            launch { trX.animateTo(defaultTr.x, animSpec) }
+            launch { trY.animateTo(defaultTr.y, animSpec) }
+            launch { blX.animateTo(defaultBl.x, animSpec) }
+            launch { blY.animateTo(defaultBl.y, animSpec) }
+            launch { brX.animateTo(defaultBr.x, animSpec) }
+            launch { brY.animateTo(defaultBr.y, animSpec) }
+            return@LaunchedEffect
+        }
+
+        val screenCoords = Matrix().run {
+            setFrom(coordinateTransformer.transformMatrix)
+            invert()
+            map(focusMeteringUiState.surfaceCoordinates)
+        }
+
+        val focusCx = screenCoords.x
+        val focusCy = screenCoords.y
+
+        val focusTl = Offset(focusCx - focusBoxHalfPx, focusCy - focusBoxHalfPx)
+        val focusTr = Offset(focusCx + focusBoxHalfPx - bracketSizePx, focusCy - focusBoxHalfPx)
+        val focusBl = Offset(focusCx - focusBoxHalfPx, focusCy + focusBoxHalfPx - bracketSizePx)
+        val focusBr = Offset(focusCx + focusBoxHalfPx - bracketSizePx, focusCy + focusBoxHalfPx - bracketSizePx)
+
+        launch { tlX.animateTo(focusTl.x, animSpec) }
+        launch { tlY.animateTo(focusTl.y, animSpec) }
+        launch { trX.animateTo(focusTr.x, animSpec) }
+        launch { trY.animateTo(focusTr.y, animSpec) }
+        launch { blX.animateTo(focusBl.x, animSpec) }
+        launch { blY.animateTo(focusBl.y, animSpec) }
+        launch { brX.animateTo(focusBr.x, animSpec) }
+        launch { brY.animateTo(focusBr.y, animSpec) }
+    }
+
+    val bracketColor = when {
+        status == com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState.Status.SUCCESS -> Color(0xFF4CAF50)
+        status == com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState.Status.FAILURE -> Color(0xFFF44336)
+        else -> Color.White
+    }
+
+    val bracketAlpha = when {
+        focusMeteringUiState is com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState.Unspecified -> 1f
+        showResult -> 0.6f
+        else -> 1f
+    }
+
+    Box(modifier = modifier.onSizeChanged { containerW = it.width.toFloat(); containerH = it.height.toFloat() }) {
         Image(
             painter = painterResource(R.drawable.ic_bracket_top_left),
             contentDescription = null,
+            colorFilter = ColorFilter.tint(bracketColor),
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 20.dp, top = 12.dp)
                 .size(48.dp)
+                .offset { IntOffset(tlX.value.toInt(), tlY.value.toInt()) }
+                .graphicsLayer { alpha = bracketAlpha }
         )
         Image(
             painter = painterResource(R.drawable.ic_bracket_top_right),
             contentDescription = null,
+            colorFilter = ColorFilter.tint(bracketColor),
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(end = 20.dp, top = 12.dp)
                 .size(48.dp)
+                .offset { IntOffset(trX.value.toInt(), trY.value.toInt()) }
+                .graphicsLayer { alpha = bracketAlpha }
         )
         Image(
             painter = painterResource(R.drawable.ic_bracket_bottom_left),
             contentDescription = null,
+            colorFilter = ColorFilter.tint(bracketColor),
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 20.dp, bottom = 12.dp)
                 .size(48.dp)
+                .offset { IntOffset(blX.value.toInt(), blY.value.toInt()) }
+                .graphicsLayer { alpha = bracketAlpha }
         )
         Image(
             painter = painterResource(R.drawable.ic_bracket_bottom_right),
             contentDescription = null,
+            colorFilter = ColorFilter.tint(bracketColor),
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 12.dp)
                 .size(48.dp)
+                .offset { IntOffset(brX.value.toInt(), brY.value.toInt()) }
+                .graphicsLayer { alpha = bracketAlpha }
         )
     }
 }
@@ -417,6 +568,7 @@ fun BottomToolbar(
             contentDescription = null,
             modifier = Modifier
                 .size(35.dp)
+                .clickable(onClick = onEffectsClick)
         )
         Image(
             painter = painterResource(R.drawable.ic_toolbar_settings),
@@ -431,9 +583,10 @@ fun BottomToolbar(
 @Preview(widthDp = 360, heightDp = 720, showBackground = true, backgroundColor = 0xFF000000)
 @Composable
 private fun CaptureLayoutPreview() {
-    PreviewLayout(
+        PreviewLayout(
         viewfinder = { m -> Box(m.fillMaxSize().background(Color(0xFF2D4A2D))) },
         aspectRatioLabel = "9:12", lensLabel = "23mm",
-        currentEvIndex = 0, onEvChange = {}, isRecording = false, isVideoMode = false
+        currentEvIndex = 0, onEvChange = {}, isRecording = false, isVideoMode = false,
+        onEffectsClick = {}
     )
 }

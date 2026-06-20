@@ -30,12 +30,15 @@ import com.google.jetpackcamera.feature.preview.navigation.getDebugSettings
 import com.google.jetpackcamera.feature.preview.navigation.getExternalCaptureMode
 import com.google.jetpackcamera.feature.preview.navigation.getRequestedSaveMode
 import com.google.jetpackcamera.model.CaptureEvent
+import com.google.jetpackcamera.model.ColorScienceMode
 import com.google.jetpackcamera.model.DebugSettings
 import com.google.jetpackcamera.model.ExternalCaptureMode
 import com.google.jetpackcamera.model.IntProgress
 import com.google.jetpackcamera.model.LowLightBoostState
 import com.google.jetpackcamera.model.SaveLocation
 import com.google.jetpackcamera.model.SaveMode
+import com.google.jetpackcamera.model.AspectRatio
+import com.google.jetpackcamera.model.FlashMode
 import com.google.jetpackcamera.settings.SettableConstraintsRepository
 import com.google.jetpackcamera.settings.SettingsRepository
 import com.google.jetpackcamera.settings.model.CameraAppSettings
@@ -199,6 +202,38 @@ class PreviewViewModel @Inject constructor(
         coroutineContext = viewModelScope.coroutineContext,
         cameraSystem = cameraSystemRepository.cameraSystem
     )
+
+    val currentCameraAppSettings: StateFlow<CameraAppSettings?> =
+        settingsRepository.defaultCameraAppSettings
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = null
+            )
+
+    fun setMfsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.updateMultiFrameStackingEnabled(enabled)
+        }
+    }
+
+    fun setColorScienceMode(mode: ColorScienceMode) {
+        viewModelScope.launch {
+            settingsRepository.updateColorScienceMode(mode)
+        }
+    }
+
+    fun setAspectRatio(aspectRatio: AspectRatio) {
+        viewModelScope.launch {
+            settingsRepository.updateAspectRatio(aspectRatio)
+        }
+    }
+
+    fun setFlashMode(flashMode: FlashMode) {
+        viewModelScope.launch {
+            settingsRepository.updateFlashModeStatus(flashMode)
+        }
+    }
 
     val captureController: CaptureController = CaptureControllerImpl(
         trackedCaptureUiState = trackedCaptureUiState,

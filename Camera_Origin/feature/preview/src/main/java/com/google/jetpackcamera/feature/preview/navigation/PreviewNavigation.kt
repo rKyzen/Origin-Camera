@@ -114,7 +114,6 @@ fun NavGraphBuilder.previewScreen(
     onNavigateToPostCapture: () -> Unit,
     onNavigateToPermissions: () -> Unit,
     onNavigateToGallery: () -> Unit = {},
-    onNavigateToFilters: () -> Unit = {},
     onCaptureEvent: (CaptureEvent) -> Unit
 ) {
     composable(
@@ -160,7 +159,6 @@ fun NavGraphBuilder.previewScreen(
             onNavigateToSettings = onNavigateToSettings,
             onNavigateToPostCapture = onNavigateToPostCapture,
             onNavigateToGallery = onNavigateToGallery,
-            onNavigateToFilters = onNavigateToFilters,
             onRequestWindowColorMode = onRequestWindowColorMode,
             onFirstFrameCaptureCompleted = onFirstFrameCaptureCompleted,
             onCaptureEvent = onCaptureEvent

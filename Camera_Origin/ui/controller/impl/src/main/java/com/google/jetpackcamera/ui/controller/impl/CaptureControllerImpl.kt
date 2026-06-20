@@ -16,6 +16,12 @@
 package com.google.jetpackcamera.ui.controller.impl
 
 import android.content.ContentResolver
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
+import android.net.Uri
 import android.util.Log
 import androidx.tracing.traceAsync
 import com.google.jetpackcamera.core.camera.CameraSystem
@@ -24,6 +30,7 @@ import com.google.jetpackcamera.data.media.MediaDescriptor
 import com.google.jetpackcamera.data.media.MediaRepository
 import com.google.jetpackcamera.model.CaptureEvent
 import com.google.jetpackcamera.model.ExternalCaptureMode
+import com.google.jetpackcamera.model.FilterPreset
 import com.google.jetpackcamera.model.ImageCaptureEvent
 import com.google.jetpackcamera.model.IntProgress
 import com.google.jetpackcamera.model.SaveLocation
@@ -89,6 +96,7 @@ class CaptureControllerImpl(
     private var recordingJob: Job? = null
     private val job = Job(parent = coroutineContext[Job])
     private val scope = CoroutineScope(coroutineContext + job)
+    private var currentFilterPreset: FilterPreset = FilterPreset.DEFAULT
 
     override fun captureImage(contentResolver: ContentResolver) {
         if (externalCaptureMode == ExternalCaptureMode.VideoCapture) {
@@ -119,19 +127,24 @@ class CaptureControllerImpl(
                     }.savedUri
                 },
                 onSuccess = { savedUri ->
+                    val filteredUri = applyFilterToSavedImage(
+                        contentResolver,
+                        savedUri,
+                        currentFilterPreset
+                    )
                     val event = if (progress != null) {
-                        ImageCaptureEvent.SequentialImageSaved(savedUri, progress)
+                        ImageCaptureEvent.SequentialImageSaved(filteredUri, progress)
                     } else {
                         if (saveLocation is SaveLocation.Cache) {
-                            ImageCaptureEvent.SingleImageCached(savedUri)
+                            ImageCaptureEvent.SingleImageCached(filteredUri)
                         } else {
-                            ImageCaptureEvent.SingleImageSaved(savedUri)
+                            ImageCaptureEvent.SingleImageSaved(filteredUri)
                         }
                     }
                     if (saveLocation !is SaveLocation.Cache) {
                         imageWellController.updateLastCapturedMedia()
                     } else {
-                        savedUri?.let {
+                        filteredUri?.let {
                             scope.launch {
                                 postCurrentMediaToMediaRepository(
                                     mediaRepository,
@@ -313,6 +326,42 @@ class CaptureControllerImpl(
             TAG,
             "Toggle Audio: $shouldEnableAudio"
         )
+    }
+
+    override fun setFilterPreset(preset: FilterPreset) {
+        currentFilterPreset = preset
+    }
+
+    private fun applyFilterToSavedImage(
+        contentResolver: ContentResolver,
+        savedUri: Uri?,
+        preset: FilterPreset
+    ): Uri? {
+        if (savedUri == null || preset == FilterPreset.DEFAULT) return savedUri
+        return try {
+            val inputStream = contentResolver.openInputStream(savedUri) ?: return savedUri
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            inputStream.close()
+            if (bitmap == null) return savedUri
+
+            val result = bitmap.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+                ?: return savedUri
+            val canvas = Canvas(result)
+            val paint = Paint().apply {
+                colorFilter = ColorMatrixColorFilter(ColorMatrix(preset.colorMatrix))
+            }
+            canvas.drawBitmap(bitmap, 0f, 0f, paint)
+            bitmap.recycle()
+
+            contentResolver.openOutputStream(savedUri)?.use { outputStream ->
+                result.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, outputStream)
+            }
+            result.recycle()
+            savedUri
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to apply filter to saved image", e)
+            savedUri
+        }
     }
 
     /**

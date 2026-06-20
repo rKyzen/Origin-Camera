@@ -26,8 +26,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +48,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -57,6 +56,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -74,6 +75,7 @@ import com.google.jetpackcamera.core.camera.VideoRecordingState
 import com.google.jetpackcamera.model.CaptureEvent
 import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ExternalCaptureMode
+import com.google.jetpackcamera.model.FilterPreset
 import com.google.jetpackcamera.model.ImageCaptureEvent
 import com.google.jetpackcamera.model.LensToZoom
 import com.google.jetpackcamera.model.VideoCaptureEvent
@@ -85,13 +87,14 @@ import com.google.jetpackcamera.ui.components.capture.ELAPSED_TIME_TAG
 import com.google.jetpackcamera.ui.components.capture.ElapsedTimeText
 import com.google.jetpackcamera.ui.components.capture.ImageWell
 import com.google.jetpackcamera.ui.components.capture.PauseResumeToggleButton
-import com.google.jetpackcamera.ui.components.capture.FilterItem
-import com.google.jetpackcamera.ui.components.capture.FiltersScreen
-import com.google.jetpackcamera.ui.components.capture.GalleryItem
-import com.google.jetpackcamera.ui.components.capture.GalleryScreen
+import com.google.jetpackcamera.ui.components.capture.FilterPanel
 import com.google.jetpackcamera.ui.components.capture.MfsProgressOverlay
 import com.google.jetpackcamera.ui.components.capture.PreviewDisplay
 import com.google.jetpackcamera.ui.components.capture.PreviewLayout
+import androidx.camera.viewfinder.compose.CoordinateTransformer
+import androidx.camera.viewfinder.compose.MutableCoordinateTransformer
+import com.google.jetpackcamera.ui.uistate.capture.FocusMeteringUiState
+import com.google.jetpackcamera.ui.components.capture.QuickControlsTray
 import com.google.jetpackcamera.ui.components.capture.R
 import com.google.jetpackcamera.ui.components.capture.ScreenFlashScreen
 import com.google.jetpackcamera.ui.components.capture.StabilizationIcon
@@ -143,7 +146,6 @@ fun PreviewScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToPostCapture: () -> Unit,
     onNavigateToGallery: () -> Unit = {},
-    onNavigateToFilters: () -> Unit = {},
     onCaptureEvent: (CaptureEvent) -> Unit,
     modifier: Modifier = Modifier,
     onRequestWindowColorMode: (Int) -> Unit = {},
@@ -207,6 +209,16 @@ fun PreviewScreen(
                     null
                 )
             }
+
+            val cameraAppSettings by viewModel.currentCameraAppSettings.collectAsState()
+            val isMfsEnabled = cameraAppSettings?.isMultiFrameStackingEnabled ?: false
+            val colorScienceMode = cameraAppSettings?.colorScienceMode
+                ?: com.google.jetpackcamera.model.ColorScienceMode.OFF
+            val currentAspectRatio = cameraAppSettings?.aspectRatio
+                ?: com.google.jetpackcamera.model.AspectRatio.THREE_FOUR
+            val currentFlashMode = cameraAppSettings?.flashMode
+                ?: com.google.jetpackcamera.model.FlashMode.OFF
+            var showQuickControls by remember { mutableStateOf(false) }
 
             val context = LocalContext.current
             LaunchedEffect(Unit) {
@@ -295,7 +307,6 @@ fun PreviewScreen(
                 surfaceRequest = surfaceRequest,
                 onNavigateToSettings = onNavigateToSettings,
                 onNavigateToGallery = onNavigateToGallery,
-                onNavigateToFilters = onNavigateToFilters,
                 onAbsoluteZoom = { zoomRatio: Float, lensToZoom: LensToZoom ->
                     scope.launch {
                         zoomStateManager.absoluteZoom(
@@ -338,7 +349,17 @@ fun PreviewScreen(
                 captureController = viewModel.captureController,
                 imageWellController = viewModel.imageWellController,
                 cameraController = viewModel.cameraController,
-                screenFlashController = viewModel.screenFlashController
+                screenFlashController = viewModel.screenFlashController,
+                isMfsEnabled = isMfsEnabled,
+                onMfsToggle = { viewModel.setMfsEnabled(it) },
+                colorScienceMode = colorScienceMode,
+                onColorScienceModeChange = { viewModel.setColorScienceMode(it) },
+                currentAspectRatio = currentAspectRatio,
+                onAspectRatioChange = { viewModel.setAspectRatio(it) },
+                currentFlashMode = currentFlashMode,
+                onFlashModeChange = { viewModel.setFlashMode(it) },
+                isQuickControlsExpanded = showQuickControls,
+                onToggleQuickControls = { showQuickControls = !showQuickControls }
             )
             val readStoragePermission: PermissionState = rememberPermissionState(
                 Manifest.permission.READ_EXTERNAL_STORAGE
@@ -355,8 +376,6 @@ fun PreviewScreen(
     }
 }
 
-private enum class OverlayScreen { None, Filters, Gallery }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ContentScreen(
@@ -366,7 +385,6 @@ private fun ContentScreen(
     modifier: Modifier = Modifier,
     onNavigateToSettings: () -> Unit = {},
     onNavigateToGallery: () -> Unit = {},
-    onNavigateToFilters: () -> Unit = {},
     onAbsoluteZoom: (Float, LensToZoom) -> Unit = { _, _ -> },
     onScaleZoom: (Float, LensToZoom) -> Unit = { _, _ -> },
     onIncrementZoom: (Float, LensToZoom) -> Unit = { _, _ -> },
@@ -381,7 +399,18 @@ private fun ContentScreen(
     captureController: CaptureController? = null,
     imageWellController: ImageWellController? = null,
     cameraController: CameraController? = null,
-    screenFlashController: ScreenFlashController? = null
+    screenFlashController: ScreenFlashController? = null,
+    onEffectsClick: () -> Unit = {},
+    isMfsEnabled: Boolean = false,
+    onMfsToggle: (Boolean) -> Unit = {},
+    colorScienceMode: com.google.jetpackcamera.model.ColorScienceMode = com.google.jetpackcamera.model.ColorScienceMode.OFF,
+    onColorScienceModeChange: (com.google.jetpackcamera.model.ColorScienceMode) -> Unit = {},
+    currentAspectRatio: com.google.jetpackcamera.model.AspectRatio = com.google.jetpackcamera.model.AspectRatio.THREE_FOUR,
+    onAspectRatioChange: (com.google.jetpackcamera.model.AspectRatio) -> Unit = {},
+    currentFlashMode: com.google.jetpackcamera.model.FlashMode = com.google.jetpackcamera.model.FlashMode.OFF,
+    onFlashModeChange: (com.google.jetpackcamera.model.FlashMode) -> Unit = {},
+    isQuickControlsExpanded: Boolean = false,
+    onToggleQuickControls: () -> Unit = {}
 ) {
     val onFlipCamera = {
         if (captureUiState.flipLensUiState is FlipLensUiState.Available) {
@@ -411,6 +440,20 @@ private fun ContentScreen(
     var deviceOrientation by remember { mutableIntStateOf(ORIENTATION_UNKNOWN) }
     LaunchedEffect(Unit) {
         rawOrientationDegreesFlow(context).collect { deviceOrientation = it }
+    }
+
+    val previousAspectRatio = remember { mutableStateOf(currentAspectRatio) }
+    LaunchedEffect(currentAspectRatio) {
+        if (previousAspectRatio.value != currentAspectRatio) {
+            previousAspectRatio.value = currentAspectRatio
+            val label = when (currentAspectRatio) {
+                com.google.jetpackcamera.model.AspectRatio.THREE_FOUR -> "4:3"
+                com.google.jetpackcamera.model.AspectRatio.ONE_ONE -> "1:1"
+                com.google.jetpackcamera.model.AspectRatio.NINE_SIXTEEN -> "16:9"
+                else -> "4:3"
+            }
+            android.widget.Toast.makeText(context, label, android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     val onCaptureImage: () -> Unit = {
@@ -444,24 +487,45 @@ private fun ContentScreen(
         else -> "3:4"
     }
 
+    val viewfinderAspectRatio = when (currentAspectRatio) {
+        com.google.jetpackcamera.model.AspectRatio.THREE_FOUR -> 3f / 4f
+        com.google.jetpackcamera.model.AspectRatio.ONE_ONE -> 1f
+        com.google.jetpackcamera.model.AspectRatio.NINE_SIXTEEN -> 9f / 16f
+        else -> 3f / 4f
+    }
+
     val lensLabel = buildString {
         val baseFocalLength = if (isUltraWide) 13f else 23f
         val effectiveFocalLength = baseFocalLength * currentZoom
         append("${effectiveFocalLength.roundToInt()} MM")
     }
 
-    var overlayScreen by remember { mutableStateOf(OverlayScreen.None) }
+    var selectedFilter by rememberSaveable { mutableStateOf(FilterPreset.DEFAULT) }
+    var showFilterPanel by remember { mutableStateOf(false) }
+    val coordinateTransformer = remember { MutableCoordinateTransformer() }
+
+    LaunchedEffect(selectedFilter) {
+        captureController?.setFilterPreset(selectedFilter)
+    }
 
     val viewfinderContent: @Composable (Modifier) -> Unit = { modifier ->
-        Box(modifier = modifier.fillMaxSize()) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+        ) {
             PreviewDisplay(
                 previewDisplayUiState = captureUiState.previewDisplayUiState,
                 onFlipCamera = onFlipCamera,
-                onTapToFocus = cameraController?.let { it::tapToFocus } ?: { _, _ -> },
+                onTapToFocus = if (isQuickControlsExpanded || showFilterPanel) {
+                    { _, _ -> }
+                } else {
+                    cameraController?.let { it::tapToFocus } ?: { _, _ -> }
+                },
                 onScaleZoom = { onScaleZoom(it, LensToZoom.PRIMARY) },
                 surfaceRequest = surfaceRequest,
                 onRequestWindowColorMode = onRequestWindowColorMode,
                 focusMeteringUiState = captureUiState.focusMeteringUiState,
+                coordinateTransformer = coordinateTransformer,
                 trackpadFocusPosition = trackpadFocusPosition
             )
             MfsProgressOverlay(
@@ -494,6 +558,7 @@ private fun ContentScreen(
         },
         // Origin Camera params
         aspectRatioLabel = aspectLabel,
+        viewfinderAspectRatio = viewfinderAspectRatio,
         lensLabel = lensLabel,
         currentEvIndex = evIndex,
         onEvChange = { newEv ->
@@ -523,8 +588,53 @@ private fun ContentScreen(
             onAbsoluteZoom(newZoom, LensToZoom.PRIMARY)
         },
         // Toolbar
-        onGalleryClick = { overlayScreen = OverlayScreen.Gallery },
-        onFiltersClick = { overlayScreen = OverlayScreen.Filters },
+        onGalleryClick = {
+            val resolver = context.contentResolver
+            val projection = arrayOf(
+                android.provider.MediaStore.Images.Media._ID,
+                android.provider.MediaStore.Images.Media.DATE_ADDED
+            )
+            val cursor = resolver.query(
+                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                null,
+                null,
+                "${android.provider.MediaStore.Images.Media.DATE_ADDED} DESC"
+            )
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val idColumn = it.getColumnIndex(android.provider.MediaStore.Images.Media._ID)
+                    val id = it.getLong(idColumn)
+                    val uri = android.content.ContentUris.withAppendedId(
+                        android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        id
+                    )
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "image/*")
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(intent)
+                } else {
+                    android.widget.Toast.makeText(
+                        context,
+                        context.getString(R.string.gallery_no_photos),
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        },
+        onFiltersClick = {
+            if (isQuickControlsExpanded) {
+                onToggleQuickControls()
+            }
+            showFilterPanel = !showFilterPanel
+        },
+        onEffectsClick = {
+            if (showFilterPanel) {
+                showFilterPanel = false
+            }
+            onToggleQuickControls()
+        },
         onSettingsClick = onNavigateToSettings,
         // Shutter speed
         currentShutterSpeed = shutterSpeed,
@@ -546,7 +656,7 @@ private fun ContentScreen(
             cameraController?.setExposureCompensation(evFromSpeed)
         },
 
-        viewfinder = if (overlayScreen == OverlayScreen.None) viewfinderContent else { _ -> },
+        viewfinder = viewfinderContent,
         captureButton = {
             fun runCaptureAction(action: () -> Unit) {
                 if ((captureUiState.quickSettingsUiState as? QuickSettingsUiState.Available)
@@ -724,40 +834,57 @@ private fun ContentScreen(
                     )
                 }
             }
-        }
+        },
+        isQuickControlsExpanded = isQuickControlsExpanded || showFilterPanel,
+        quickControlsTray = {
+            QuickControlsTray(
+                visible = isQuickControlsExpanded,
+                currentEvIndex = evIndex,
+                onEvChange = { newEv ->
+                    evIndex = newEv
+                    cameraController?.setExposureCompensation(newEv)
+                },
+                isMultiFrameStackingEnabled = isMfsEnabled,
+                onMfsToggle = onMfsToggle,
+                colorScienceMode = colorScienceMode,
+                onColorScienceModeChange = onColorScienceModeChange,
+                currentAspectRatio = currentAspectRatio,
+                onAspectRatioChange = onAspectRatioChange,
+                currentFlashMode = currentFlashMode,
+                onFlashModeChange = onFlashModeChange
+            )
+            FilterPanel(
+                visible = showFilterPanel,
+                selectedFilter = selectedFilter,
+                onFilterSelected = { selectedFilter = it }
+            )
+        },
+        onShutterTap = {
+            if (isQuickControlsExpanded) {
+                onToggleQuickControls()
+            } else if (showFilterPanel) {
+                showFilterPanel = false
+            } else {
+                onCaptureImage()
+            }
+        },
+        onBackClick = {
+            if (isQuickControlsExpanded) {
+                onToggleQuickControls()
+            } else if (showFilterPanel) {
+                showFilterPanel = false
+            }
+        },
+        focusMeteringUiState = captureUiState.focusMeteringUiState,
+        coordinateTransformer = coordinateTransformer
     )
 
-    BackHandler(enabled = overlayScreen != OverlayScreen.None) {
-        overlayScreen = OverlayScreen.None
+    BackHandler(enabled = isQuickControlsExpanded) {
+        onToggleQuickControls()
     }
 
-    AnimatedVisibility(
-        visible = overlayScreen == OverlayScreen.Filters,
-        enter = slideInVertically { it },
-        exit = slideOutVertically { it }
-    ) {
-        FiltersScreen(
-            filters = listOf(
-                FilterItem("Green Vibes", "Cinematic\ngreen skies", Color(0xFF4A7A6A)),
-                FilterItem("Retro Field", "Color Filter for\ndigital warmth", Color(0xFF6A5A3A)),
-            ),
-            onGalleryClick = { overlayScreen = OverlayScreen.Gallery },
-            onFiltersClick = { overlayScreen = OverlayScreen.None },
-            onSettingsClick = onNavigateToSettings,
-            onAddFilter = {},
-            onFilterClick = {},
-            viewfinder = viewfinderContent
-        )
-    }
-    AnimatedVisibility(
-        visible = overlayScreen == OverlayScreen.Gallery,
-        enter = slideInVertically { it },
-        exit = slideOutVertically { it }
-    ) {
-        GalleryScreen(
-            items = emptyList(),
-            onBack = { overlayScreen = OverlayScreen.None }
-        )
+    BackHandler(enabled = showFilterPanel) {
+        showFilterPanel = false
     }
     }
 }
@@ -802,6 +929,7 @@ private fun LayoutWrapper(
     snackBar: @Composable (modifier: Modifier, snackbarHostState: SnackbarHostState) -> Unit = { _, _ -> },
     // Origin Camera specific
     aspectRatioLabel: String = "3:4",
+    viewfinderAspectRatio: Float = 3f / 4f,
     lensLabel: String = "23 MM",
     currentEvIndex: Int = 0,
     onEvChange: (Int) -> Unit = {},
@@ -820,8 +948,15 @@ private fun LayoutWrapper(
     onShutterSpeedChange: (Int) -> Unit = {},
     onGalleryClick: () -> Unit = {},
     onFiltersClick: () -> Unit = {},
+    onEffectsClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
-    deviceOrientation: Int = ORIENTATION_UNKNOWN
+    deviceOrientation: Int = ORIENTATION_UNKNOWN,
+    isQuickControlsExpanded: Boolean = false,
+    quickControlsTray: @Composable () -> Unit = {},
+    onShutterTap: () -> Unit = {},
+    onBackClick: () -> Unit = {},
+    focusMeteringUiState: FocusMeteringUiState = FocusMeteringUiState.Unspecified,
+    coordinateTransformer: CoordinateTransformer = MutableCoordinateTransformer()
 ) {
     val zoomIncrement = 0.15f
     Box(
@@ -877,6 +1012,7 @@ private fun LayoutWrapper(
             snackBar = snackBar,
             // Origin Camera
             aspectRatioLabel = aspectRatioLabel,
+            viewfinderAspectRatio = viewfinderAspectRatio,
             lensLabel = lensLabel,
             currentEvIndex = currentEvIndex,
             onEvChange = onEvChange,
@@ -894,8 +1030,15 @@ private fun LayoutWrapper(
             onShutterSpeedChange = onShutterSpeedChange,
             onGalleryClick = onGalleryClick,
             onFiltersClick = onFiltersClick,
+            onEffectsClick = onEffectsClick,
             onSettingsClick = onSettingsClick,
-            deviceOrientation = deviceOrientation
+            deviceOrientation = deviceOrientation,
+            isQuickControlsExpanded = isQuickControlsExpanded,
+            quickControlsTray = quickControlsTray,
+            onShutterTap = onShutterTap,
+            onBackClick = onBackClick,
+            focusMeteringUiState = focusMeteringUiState,
+            coordinateTransformer = coordinateTransformer
         )
     }
 }
