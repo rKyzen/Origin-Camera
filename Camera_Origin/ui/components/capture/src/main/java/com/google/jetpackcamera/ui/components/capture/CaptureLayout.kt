@@ -137,7 +137,6 @@ fun PreviewLayout(
     onGalleryClick: () -> Unit = {},
     onFiltersClick: () -> Unit = {},
     onEffectsClick: () -> Unit = {},
-    onSettingsClick: () -> Unit = {},
     deviceOrientation: Int = ORIENTATION_UNKNOWN,
     isQuickControlsExpanded: Boolean = false,
     quickControlsTray: @Composable () -> Unit = {},
@@ -274,8 +273,7 @@ fun PreviewLayout(
                     modifier = Modifier.padding(top = 8.dp),
                     onGalleryClick = onGalleryClick,
                     onFiltersClick = onFiltersClick,
-                    onEffectsClick = onEffectsClick,
-                    onSettingsClick = onSettingsClick
+                    onEffectsClick = onEffectsClick
                 )
             }
         }
@@ -540,8 +538,7 @@ fun BottomToolbar(
     modifier: Modifier = Modifier,
     onGalleryClick: () -> Unit = {},
     onFiltersClick: () -> Unit = {},
-    onEffectsClick: () -> Unit = {},
-    onSettingsClick: () -> Unit = {}
+    onEffectsClick: () -> Unit = {}
 ) {
     Row(modifier = modifier
             .clip(RoundedCornerShape(20.dp)).background(ToolbarBg)
@@ -553,7 +550,7 @@ fun BottomToolbar(
             painter = painterResource(R.drawable.ic_toolbar_gallery),
             contentDescription = null,
             modifier = Modifier
-                .size(30.dp) // icon size
+                .size(30.dp)
                 .clickable(onClick = onGalleryClick)
         )
         Image(
@@ -569,13 +566,6 @@ fun BottomToolbar(
             modifier = Modifier
                 .size(35.dp)
                 .clickable(onClick = onEffectsClick)
-        )
-        Image(
-            painter = painterResource(R.drawable.ic_toolbar_settings),
-            contentDescription = null,
-            modifier = Modifier
-                .size(35.dp)
-                .clickable(onClick = onSettingsClick)
         )
     }
 }

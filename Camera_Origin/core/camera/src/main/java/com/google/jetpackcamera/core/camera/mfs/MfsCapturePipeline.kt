@@ -50,11 +50,17 @@ class MfsCapturePipeline(
         config: MfsConfig,
         progressCallback: MfsProgressCallback? = null
     ): Result<Bitmap> = withContext(Dispatchers.Default) {
+        var lastBitmap: Bitmap? = null
         try {
             checkCancelled()
             val totalFrames = config.frameCount
             progressCallback?.onProgress(MfsStage.CAPTURING, 0, totalFrames)
+
+            val captureStart = System.currentTimeMillis()
             val frames = captureBurst(imageCapture, executor, config, progressCallback)
+            val captureTime = System.currentTimeMillis() - captureStart
+            Log.d(TAG, "[MFS] Capture: ${captureTime}ms (${frames.size} frames)")
+
             if (frames.isEmpty()) {
                 return@withContext Result.failure(
                     RuntimeException("MFS: no frames captured")
@@ -67,13 +73,25 @@ class MfsCapturePipeline(
                 val corrected = distortionCorrector?.correct(frames.first().bitmap)
                     ?: frames.first().bitmap
                 val look = config.lookProfile
-                val contrastAmount = look?.contrast ?: 0.12f
+                val contrastAmount = look?.contrast ?: 0.20f
                 val saturationFactor = look?.saturation ?: 1.18f
-                val contrasted = merger.adjustContrast(corrected, contrastAmount)
+
+                val enhanceStart = System.currentTimeMillis()
+                val localContrasted = merger.enhanceLocalContrast(corrected, 0.3f)
+                if (localContrasted !== corrected) corrected.recycle()
+                val contrasted = merger.adjustContrast(localContrasted, contrastAmount)
+                if (contrasted !== localContrasted) localContrasted.recycle()
                 val saturated = merger.boostSaturation(contrasted, saturationFactor)
+                if (saturated !== contrasted) contrasted.recycle()
+                val enhanceTime = System.currentTimeMillis() - enhanceStart
+                Log.d(TAG, "[MFS] Enhance: ${enhanceTime}ms")
+
+                frames.forEach { if (it.bitmap !== saturated) it.bitmap.recycle() }
+                lastBitmap = saturated
                 return@withContext Result.success(saturated)
             }
 
+            val alignStart = System.currentTimeMillis()
             val processingFrames = if (config.processingScale < 1f) {
                 frames.map { frame ->
                     val newW = (frame.bitmap.width * config.processingScale).toInt()
@@ -83,6 +101,7 @@ class MfsCapturePipeline(
                     val scaled = Bitmap.createScaledBitmap(
                         frame.bitmap, newW, newH, true
                     )
+                    if (scaled !== frame.bitmap) frame.bitmap.recycle()
                     frame.copy(bitmap = scaled)
                 }
             } else {
@@ -91,7 +110,9 @@ class MfsCapturePipeline(
 
             val alignFrames = if (config.preFilterStrength > 0f) {
                 processingFrames.map {
-                    it.copy(bitmap = merger.preFilterFrame(it.bitmap))
+                    val filtered = merger.preFilterFrame(it.bitmap)
+                    if (filtered !== it.bitmap) it.bitmap.recycle()
+                    it.copy(bitmap = filtered)
                 }
             } else {
                 processingFrames
@@ -101,38 +122,64 @@ class MfsCapturePipeline(
 
             val aligned = aligner.alignFrames(reference, targets)
             val allFrames = listOf(reference) + aligned
+            val alignTime = System.currentTimeMillis() - alignStart
+            Log.d(TAG, "[MFS] Align: ${alignTime}ms")
+
+            checkCancelled()
+
+            val mergeStart = System.currentTimeMillis()
             val merged = merger.merge(allFrames, config.mergeStrategy)
+            allFrames.forEach { if (it.bitmap !== merged) it.bitmap.recycle() }
+            val mergeTime = System.currentTimeMillis() - mergeStart
+            Log.d(TAG, "[MFS] Merge: ${mergeTime}ms")
+
+            checkCancelled()
+
             val look = config.lookProfile
             val denoiseStr = look?.noiseReduction ?: config.denoiseStrength
             val sharpenStr = look?.sharpness ?: config.sharpenStrength
+
+            val enhanceStart = System.currentTimeMillis()
             val enhanced = merger.enhanceDetail(merged, denoiseStr, sharpenStr)
-            val corrected = distortionCorrector?.correct(enhanced) ?: enhanced
-            val contrastAmount = look?.contrast ?: 0.12f
+            if (enhanced !== merged) merged.recycle()
+            val localContrasted = merger.enhanceLocalContrast(enhanced, 0.3f)
+            if (localContrasted !== enhanced) enhanced.recycle()
+            val corrected = distortionCorrector?.correct(localContrasted) ?: localContrasted
+            if (corrected !== localContrasted) localContrasted.recycle()
+            val contrastAmount = look?.contrast ?: 0.20f
             val saturationFactor = look?.saturation ?: 1.18f
             val contrasted = merger.adjustContrast(corrected, contrastAmount)
+            if (contrasted !== corrected) corrected.recycle()
             val saturated = merger.boostSaturation(contrasted, saturationFactor)
+            if (saturated !== contrasted) contrasted.recycle()
+            val enhanceTime = System.currentTimeMillis() - enhanceStart
+            Log.d(TAG, "[MFS] Enhance: ${enhanceTime}ms")
 
             progressCallback?.onProgress(MfsStage.SAVING, frames.size, totalFrames)
 
             val lookLabel = if (look != null) " lookProfile=active" else ""
             Log.d(
                 TAG,
-                "MFS done: ${frames.size}f " +
+                "[MFS] Total: ${captureTime + alignTime + mergeTime + enhanceTime}ms " +
                     "strat=${config.mergeStrategy} " +
                     "preF=${config.preFilterStrength} " +
                     "denoise=${denoiseStr} " +
                     "sharpen=${sharpenStr}" +
                     lookLabel
             )
+            lastBitmap = saturated
             Result.success(saturated)
         } catch (e: CancellationException) {
             throw e
         } catch (e: OutOfMemoryError) {
-            Log.e(TAG, "MFS pipeline OOM", e)
+            Log.e(TAG, "[MFS] Pipeline OOM", e)
             Result.failure(e)
         } catch (e: Exception) {
-            Log.e(TAG, "MFS pipeline failed", e)
+            Log.e(TAG, "[MFS] Pipeline failed", e)
             Result.failure(e)
+        } catch (e: Throwable) {
+            Log.e(TAG, "[MFS] Pipeline fatal error", e)
+            Result.failure(RuntimeException("MFS fatal error", e))
         }
     }
 
@@ -174,8 +221,12 @@ class MfsCapturePipeline(
             executor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(imageProxy: ImageProxy) {
-                    val bmp = imageProxyToBitmap(imageProxy)
-                    imageProxy.close()
+                    var bmp: Bitmap? = null
+                    try {
+                        bmp = imageProxyToBitmap(imageProxy)
+                    } finally {
+                        imageProxy.close()
+                    }
                     val frameData = bmp?.let {
                         FrameData(
                             bitmap = it,

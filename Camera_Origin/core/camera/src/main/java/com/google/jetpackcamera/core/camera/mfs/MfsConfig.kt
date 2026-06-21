@@ -136,7 +136,7 @@ data class MfsConfig(
             lightLevel: LightLevel,
             liveIso: Int?
         ): Float {
-            var strength = 0.4f
+            var strength = 0.48f
 
             val zoomBoost = (sqrt(zoomFactor.coerceAtLeast(1f)) - 1f) * 0.3f
             strength += zoomBoost.coerceIn(0f, 0.4f)
@@ -157,7 +157,7 @@ data class MfsConfig(
             }
             strength -= noisePenalty
 
-            return strength.coerceIn(0.1f, 0.9f)
+            return strength.coerceIn(0.15f, 0.9f)
         }
     }
 }

@@ -149,9 +149,23 @@ class CameraXCameraSystem(
 
     @Volatile
     private var currentMfsPipeline: MfsCapturePipeline? = null
+    private val mfsCapturing = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun cancelMfsCapture() {
         currentMfsPipeline?.cancel()
+        currentCameraState.update {
+            if (it.mfsState !is MfsState.Idle) {
+                it.copy(mfsState = MfsState.Failed("Cancelled by user"))
+            } else it
+        }
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            kotlinx.coroutines.delay(1500L)
+            currentCameraState.update {
+                if (it.mfsState is MfsState.Failed || it.mfsState is MfsState.Saved) {
+                    it.copy(mfsState = MfsState.Idle)
+                } else it
+            }
+        }
     }
 
     private val _systemConstraints = MutableStateFlow<CameraSystemConstraints?>(null)
@@ -706,6 +720,16 @@ class CameraXCameraSystem(
             try { cameraManager.getCameraCharacteristics(id) } catch (e: Exception) { null }
         }
         val distortionCorrector = characteristics?.let { LensDistortionCorrector(it) }
+
+        if (!mfsCapturing.compareAndSet(false, true)) {
+            Log.w(TAG, "MFS capture already in progress, rejecting")
+            currentCameraState.update {
+                it.copy(mfsState = MfsState.Failed("MFS already in progress"))
+            }
+            currentCameraState.update { it.copy(mfsState = MfsState.Idle) }
+            return ImageCapture.OutputFileResults(null)
+        }
+
         currentCameraState.update { it.copy(mfsState = MfsState.Capturing(0, config.frameCount)) }
         val pipeline = MfsCapturePipeline(distortionCorrector = distortionCorrector).also {
             currentMfsPipeline = it
@@ -729,6 +753,7 @@ class CameraXCameraSystem(
             )
         } finally {
             currentMfsPipeline = null
+            mfsCapturing.set(false)
         }
 
         return result.fold(
@@ -737,22 +762,56 @@ class CameraXCameraSystem(
                 try {
                     val savedUri = saveMfsBitmap(bitmap, contentResolver, saveLocation)
                     currentCameraState.update { it.copy(mfsState = MfsState.Saved) }
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                        kotlinx.coroutines.delay(1500L)
+                        currentCameraState.update {
+                            if (it.mfsState is MfsState.Saved) {
+                                it.copy(mfsState = MfsState.Idle)
+                            } else it
+                        }
+                    }
                     ImageCapture.OutputFileResults(savedUri)
                 } catch (e: CancellationException) {
                     currentCameraState.update {
                         it.copy(mfsState = MfsState.Failed("MFS save cancelled"))
                     }
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                        kotlinx.coroutines.delay(1500L)
+                        currentCameraState.update {
+                            if (it.mfsState is MfsState.Failed) {
+                                it.copy(mfsState = MfsState.Idle)
+                            } else it
+                        }
+                    }
                     throw e
                 } catch (e: Exception) {
+                    Log.e(TAG, "MFS save failed", e)
                     currentCameraState.update {
                         it.copy(mfsState = MfsState.Failed(e.message ?: "Save failed"))
+                    }
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                        kotlinx.coroutines.delay(1500L)
+                        currentCameraState.update {
+                            if (it.mfsState is MfsState.Failed) {
+                                it.copy(mfsState = MfsState.Idle)
+                            } else it
+                        }
                     }
                     throw RuntimeException("MFS save failed", e)
                 }
             },
             onFailure = { error ->
+                Log.e(TAG, "MFS pipeline failed", error)
                 currentCameraState.update {
                     it.copy(mfsState = MfsState.Failed(error.message ?: "Unknown error"))
+                }
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                    kotlinx.coroutines.delay(1500L)
+                    currentCameraState.update {
+                        if (it.mfsState is MfsState.Failed) {
+                            it.copy(mfsState = MfsState.Idle)
+                        } else it
+                    }
                 }
                 Log.w(TAG, "MFS failed, falling back to single frame", error)
                 val (outputFileOptions, closeable) = when (saveLocation) {
@@ -803,7 +862,9 @@ class CameraXCameraSystem(
         contentResolver: ContentResolver,
         saveLocation: SaveLocation
     ): Uri {
-        return when (saveLocation) {
+        Log.d(TAG, "[MFS] SAVE START")
+        val saveStart = System.currentTimeMillis()
+        val uri = when (saveLocation) {
             is SaveLocation.Default -> {
                 val filename = filePathGenerator.generateImageFilename()
                 val contentValues = ContentValues().apply {
@@ -814,14 +875,15 @@ class CameraXCameraSystem(
                             MediaStore.Images.Media.RELATIVE_PATH,
                             filePathGenerator.relativeImageOutputPath
                         )
+                        put(MediaStore.Images.Media.IS_PENDING, 1)
                     }
                 }
-                val uri = contentResolver.insert(
+                val insertedUri = contentResolver.insert(
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     contentValues
                 ) ?: throw RuntimeException("Failed to create MediaStore entry")
-                val outputStream = contentResolver.openOutputStream(uri)
-                    ?: throw RuntimeException("Failed to open output stream for $uri")
+                val outputStream = contentResolver.openOutputStream(insertedUri)
+                    ?: throw RuntimeException("Failed to open output stream for $insertedUri")
                 outputStream.use { stream ->
                     if (!bitmap.compress(
                             android.graphics.Bitmap.CompressFormat.JPEG, 100, stream
@@ -830,7 +892,13 @@ class CameraXCameraSystem(
                         throw RuntimeException("Bitmap JPEG compression failed")
                     }
                 }
-                uri
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val pendingValues = ContentValues().apply {
+                        put(MediaStore.Images.Media.IS_PENDING, 0)
+                    }
+                    contentResolver.update(insertedUri, pendingValues, null, null)
+                }
+                insertedUri
             }
 
             is SaveLocation.Explicit -> {
@@ -862,6 +930,10 @@ class CameraXCameraSystem(
                 Uri.fromFile(tempFile)
             }
         }
+        val saveTime = System.currentTimeMillis() - saveStart
+        Log.d(TAG, "[MFS] SAVE COMPLETE: ${saveTime}ms -> $uri")
+        bitmap.recycle()
+        return uri
     }
 
     private fun estimateSensorMP(): Float {
@@ -896,13 +968,13 @@ class CameraXCameraSystem(
             lightLevel == com.google.jetpackcamera.core.camera.mfs.LightLevel.LOW || normalizedIso > 0.5f
         val isTelephoto = zoomFactor > 3f
         val brightness = if (isLowLight) 0.42f else 0.58f
-        val contrast = if (isLowLight) 0.18f else 0.12f
+        val contrast = if (isLowLight) 0.22f else 0.20f
         val saturation = if (isLowLight) 1.28f else 1.15f
-        val baseSharpness = 0.45f - normalizedIso * 0.25f + zoomNorm * 0.15f
+        val baseSharpness = 0.50f - normalizedIso * 0.25f + zoomNorm * 0.15f
         val sharpness = if (isTelephoto) {
             (baseSharpness + 0.1f).coerceAtMost(0.9f)
         } else {
-            baseSharpness.coerceIn(0.2f, 0.8f)
+            baseSharpness.coerceIn(0.25f, 0.85f)
         }
         val noiseReduction = if (isLowLight) {
             (normalizedIso * 0.35f).coerceIn(0.1f, 0.4f)
@@ -913,7 +985,7 @@ class CameraXCameraSystem(
             brightness = brightness,
             contrast = contrast,
             saturation = saturation,
-            sharpness = sharpness.coerceIn(0.2f, 0.8f),
+            sharpness = sharpness.coerceIn(0.25f, 0.85f),
             noiseReduction = noiseReduction
         )
     }

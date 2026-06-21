@@ -635,7 +635,6 @@ private fun ContentScreen(
             }
             onToggleQuickControls()
         },
-        onSettingsClick = onNavigateToSettings,
         // Shutter speed
         currentShutterSpeed = shutterSpeed,
         onShutterSpeedChange = { speed ->
@@ -949,7 +948,6 @@ private fun LayoutWrapper(
     onGalleryClick: () -> Unit = {},
     onFiltersClick: () -> Unit = {},
     onEffectsClick: () -> Unit = {},
-    onSettingsClick: () -> Unit = {},
     deviceOrientation: Int = ORIENTATION_UNKNOWN,
     isQuickControlsExpanded: Boolean = false,
     quickControlsTray: @Composable () -> Unit = {},
@@ -1031,7 +1029,6 @@ private fun LayoutWrapper(
             onGalleryClick = onGalleryClick,
             onFiltersClick = onFiltersClick,
             onEffectsClick = onEffectsClick,
-            onSettingsClick = onSettingsClick,
             deviceOrientation = deviceOrientation,
             isQuickControlsExpanded = isQuickControlsExpanded,
             quickControlsTray = quickControlsTray,

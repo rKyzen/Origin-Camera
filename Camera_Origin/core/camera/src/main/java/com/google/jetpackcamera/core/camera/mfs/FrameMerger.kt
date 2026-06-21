@@ -637,6 +637,61 @@ class FrameMerger {
         return result
     }
 
+    fun enhanceLocalContrast(bitmap: Bitmap, strength: Float = 0.3f): Bitmap {
+        if (strength <= 0f) return bitmap
+        val w = bitmap.width
+        val h = bitmap.height
+        val src = IntArray(w * h)
+        bitmap.getPixels(src, 0, w, 0, 0, w, h)
+
+        val lum = IntArray(w * h)
+        for (i in src.indices) {
+            val r = src[i] shr 16 and 0xFF
+            val g = src[i] shr 8 and 0xFF
+            val b = src[i] and 0xFF
+            lum[i] = (r * 77 + g * 150 + b * 29) shr 8
+        }
+
+        val blurRadius = 3
+        val blurredLum = IntArray(w * h)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                var sum = 0
+                var count = 0
+                for (dy in -blurRadius..blurRadius) {
+                    for (dx in -blurRadius..blurRadius) {
+                        val ny = (y + dy).coerceIn(0, h - 1)
+                        val nx = (x + dx).coerceIn(0, w - 1)
+                        sum += lum[ny * w + nx]
+                        count++
+                    }
+                }
+                blurredLum[y * w + x] = sum / count
+            }
+        }
+
+        val dst = IntArray(w * h)
+        for (i in src.indices) {
+            val r = src[i] shr 16 and 0xFF
+            val g = src[i] shr 8 and 0xFF
+            val b = src[i] and 0xFF
+            val origLum = lum[i]
+            val blurred = blurredLum[i]
+            val detail = origLum - blurred
+            val gain = strength * detail
+
+            val nr = (r + gain).toInt().coerceIn(0, 255)
+            val ng = (g + gain).toInt().coerceIn(0, 255)
+            val nb = (b + gain).toInt().coerceIn(0, 255)
+
+            dst[i] = (0xFF shl 24) or (nr shl 16) or (ng shl 8) or nb
+        }
+
+        val result = Bitmap.createBitmap(w, h, Config.ARGB_8888)
+        result.setPixels(dst, 0, w, 0, 0, w, h)
+        return result
+    }
+
     private fun sCurve(v: Int, amount: Float): Int {
         val x = v / 255f
         val y = x + amount * x * (1f - x) * (x - 0.5f) * 4f

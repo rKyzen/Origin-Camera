@@ -18,9 +18,9 @@ enum class FilterPreset(
     VIVID(
         label = "Vivid",
         colorMatrix = floatArrayOf(
-            1.15f, 0.05f, 0.0f, 0f, 0f,
-            0.0f, 1.15f, 0.0f, 0f, 0f,
-            0.0f, 0.0f, 1.1f, 0f, 0f,
+            1.25f, 0.0f, 0.0f, 0f, 0f,
+            0.0f, 1.25f, 0.0f, 0f, 0f,
+            0.0f, 0.0f, 1.18f, 0f, 0f,
             0f, 0f, 0f, 1f, 0f
         )
     ),

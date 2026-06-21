@@ -77,6 +77,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:common"))
     implementation(project(":core:camera"))
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     // Testing
     testImplementation(libs.junit)

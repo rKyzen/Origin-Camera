@@ -16,10 +16,12 @@
 package com.google.jetpackcamera.ui.controller.impl
 
 import android.content.ContentResolver
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.net.Uri
 import android.util.Log
@@ -344,19 +346,58 @@ class CaptureControllerImpl(
             inputStream.close()
             if (bitmap == null) return savedUri
 
-            val result = bitmap.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+            val exif = androidx.exifinterface.media.ExifInterface(
+                contentResolver.openInputStream(savedUri)!!
+            )
+            val orientation = exif.getAttributeInt(
+                androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL
+            )
+            val rotationDegrees = when (orientation) {
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+
+            val rotated = if (rotationDegrees != 0) {
+                val matrix = android.graphics.Matrix().apply {
+                    postRotate(rotationDegrees.toFloat())
+                }
+                val rotatedBmp = Bitmap.createBitmap(
+                    bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
+                )
+                bitmap.recycle()
+                rotatedBmp
+            } else {
+                bitmap
+            }
+
+            val result = rotated.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
                 ?: return savedUri
             val canvas = Canvas(result)
             val paint = Paint().apply {
                 colorFilter = ColorMatrixColorFilter(ColorMatrix(preset.colorMatrix))
             }
-            canvas.drawBitmap(bitmap, 0f, 0f, paint)
-            bitmap.recycle()
+            canvas.drawBitmap(rotated, 0f, 0f, paint)
+            rotated.recycle()
 
             contentResolver.openOutputStream(savedUri)?.use { outputStream ->
                 result.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, outputStream)
             }
             result.recycle()
+
+            try {
+                val exifOut = androidx.exifinterface.media.ExifInterface(
+                    contentResolver.openInputStream(savedUri)!!
+                )
+                exifOut.setAttribute(
+                    androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
+                    androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL.toString()
+                )
+                exifOut.saveAttributes()
+            } catch (_: Exception) { }
+
             savedUri
         } catch (e: Exception) {
             Log.e(TAG, "Failed to apply filter to saved image", e)
