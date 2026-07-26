@@ -77,6 +77,7 @@ import com.google.jetpackcamera.model.CaptureMode
 import com.google.jetpackcamera.model.ExternalCaptureMode
 import com.google.jetpackcamera.model.FilterPreset
 import com.google.jetpackcamera.model.ImageCaptureEvent
+import com.google.jetpackcamera.model.LensFacing
 import com.google.jetpackcamera.model.LensToZoom
 import com.google.jetpackcamera.model.VideoCaptureEvent
 import com.google.jetpackcamera.ui.components.capture.AmplitudeToggleButton
@@ -412,16 +413,28 @@ private fun ContentScreen(
     isQuickControlsExpanded: Boolean = false,
     onToggleQuickControls: () -> Unit = {}
 ) {
+    var previousMfsEnabled by remember { mutableStateOf(isMfsEnabled) }
     val onFlipCamera = {
         if (captureUiState.flipLensUiState is FlipLensUiState.Available) {
-            quickSettingsController?.setLensFacing(
-                (
-                    captureUiState.flipLensUiState as FlipLensUiState.Available
-                    )
-                    .selectedLensFacing.flip()
-            )
+            val currentLensFacing = (captureUiState.flipLensUiState as FlipLensUiState.Available)
+                .selectedLensFacing
+            val newLensFacing = currentLensFacing.flip()
+
+            if (newLensFacing == LensFacing.FRONT && isMfsEnabled) {
+                previousMfsEnabled = true
+                onMfsToggle(false)
+            } else if (newLensFacing == LensFacing.BACK && previousMfsEnabled) {
+                previousMfsEnabled = false
+                onMfsToggle(true)
+            }
+
+            quickSettingsController?.setLensFacing(newLensFacing)
         }
     }
+
+    val isMfsInProgress = captureUiState.mfsProgressUiState is MfsProgressUiState.Capturing ||
+        captureUiState.mfsProgressUiState is MfsProgressUiState.Processing ||
+        captureUiState.mfsProgressUiState is MfsProgressUiState.Saving
 
     val isAudioEnabled = remember(captureUiState) {
         captureUiState.audioUiState is AudioUiState.Enabled.On
@@ -635,6 +648,7 @@ private fun ContentScreen(
             }
             onToggleQuickControls()
         },
+        isMfsInProgress = isMfsInProgress,
         // Shutter speed
         currentShutterSpeed = shutterSpeed,
         onShutterSpeedChange = { speed ->
@@ -948,6 +962,7 @@ private fun LayoutWrapper(
     onGalleryClick: () -> Unit = {},
     onFiltersClick: () -> Unit = {},
     onEffectsClick: () -> Unit = {},
+    isMfsInProgress: Boolean = false,
     deviceOrientation: Int = ORIENTATION_UNKNOWN,
     isQuickControlsExpanded: Boolean = false,
     quickControlsTray: @Composable () -> Unit = {},
@@ -1029,6 +1044,7 @@ private fun LayoutWrapper(
             onGalleryClick = onGalleryClick,
             onFiltersClick = onFiltersClick,
             onEffectsClick = onEffectsClick,
+            isMfsInProgress = isMfsInProgress,
             deviceOrientation = deviceOrientation,
             isQuickControlsExpanded = isQuickControlsExpanded,
             quickControlsTray = quickControlsTray,

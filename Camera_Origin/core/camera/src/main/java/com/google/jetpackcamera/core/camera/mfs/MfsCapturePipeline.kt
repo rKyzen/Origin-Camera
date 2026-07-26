@@ -19,6 +19,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 
 private const val TAG = "MfsCapturePipeline"
 
@@ -69,6 +71,7 @@ class MfsCapturePipeline(
             progressCallback?.onProgress(MfsStage.MERGING, frames.size, totalFrames)
 
             if (frames.size == 1) {
+                Log.d(TAG, "[MFS] Single frame path")
                 progressCallback?.onProgress(MfsStage.SAVING, 1, totalFrames)
                 val corrected = distortionCorrector?.correct(frames.first().bitmap)
                     ?: frames.first().bitmap
@@ -77,7 +80,9 @@ class MfsCapturePipeline(
                 val saturationFactor = look?.saturation ?: 1.18f
 
                 val enhanceStart = System.currentTimeMillis()
-                val localContrasted = merger.enhanceLocalContrast(corrected, 0.3f)
+                val localContrasted = merger.enhanceLocalContrast(
+                    corrected, 0.3f + config.microContrastBoost
+                )
                 if (localContrasted !== corrected) corrected.recycle()
                 val contrasted = merger.adjustContrast(localContrasted, contrastAmount)
                 if (contrasted !== localContrasted) localContrasted.recycle()
@@ -120,6 +125,7 @@ class MfsCapturePipeline(
             val reference = alignFrames.first()
             val targets = alignFrames.drop(1)
 
+            Log.d(TAG, "[MFS] Alignment started (${alignFrames.size} frames)")
             val aligned = aligner.alignFrames(reference, targets)
             val allFrames = listOf(reference) + aligned
             val alignTime = System.currentTimeMillis() - alignStart
@@ -128,6 +134,7 @@ class MfsCapturePipeline(
             checkCancelled()
 
             val mergeStart = System.currentTimeMillis()
+            Log.d(TAG, "[MFS] Merge started (strategy=${config.mergeStrategy})")
             val merged = merger.merge(allFrames, config.mergeStrategy)
             allFrames.forEach { if (it.bitmap !== merged) it.bitmap.recycle() }
             val mergeTime = System.currentTimeMillis() - mergeStart
@@ -138,16 +145,21 @@ class MfsCapturePipeline(
             val look = config.lookProfile
             val denoiseStr = look?.noiseReduction ?: config.denoiseStrength
             val sharpenStr = look?.sharpness ?: config.sharpenStrength
+            val clarityStr = config.clarityStrength
+            val microContrastStr = config.microContrastBoost
 
             val enhanceStart = System.currentTimeMillis()
+            Log.d(TAG, "[MFS] Enhance started (denoise=${"%.2f".format(denoiseStr)}, sharpen=${"%.2f".format(sharpenStr)}, clarity=${"%.2f".format(clarityStr)})")
             val enhanced = merger.enhanceDetail(merged, denoiseStr, sharpenStr)
             if (enhanced !== merged) merged.recycle()
-            val localContrasted = merger.enhanceLocalContrast(enhanced, 0.3f)
-            if (localContrasted !== enhanced) enhanced.recycle()
+            val clarified = merger.applyClarity(enhanced, clarityStr)
+            if (clarified !== enhanced) enhanced.recycle()
+            val localContrasted = merger.enhanceLocalContrast(clarified, 0.40f + microContrastStr)
+            if (localContrasted !== clarified) clarified.recycle()
             val corrected = distortionCorrector?.correct(localContrasted) ?: localContrasted
             if (corrected !== localContrasted) localContrasted.recycle()
-            val contrastAmount = look?.contrast ?: 0.20f
-            val saturationFactor = look?.saturation ?: 1.18f
+            val contrastAmount = look?.contrast ?: 0.22f
+            val saturationFactor = look?.saturation ?: 1.22f
             val contrasted = merger.adjustContrast(corrected, contrastAmount)
             if (contrasted !== corrected) corrected.recycle()
             val saturated = merger.boostSaturation(contrasted, saturationFactor)
@@ -162,9 +174,12 @@ class MfsCapturePipeline(
                 TAG,
                 "[MFS] Total: ${captureTime + alignTime + mergeTime + enhanceTime}ms " +
                     "strat=${config.mergeStrategy} " +
+                    "zoom=${"%.1f".format(config.zoomRatio)}x " +
                     "preF=${config.preFilterStrength} " +
-                    "denoise=${denoiseStr} " +
-                    "sharpen=${sharpenStr}" +
+                    "denoise=${"%.2f".format(denoiseStr)} " +
+                    "sharpen=${"%.2f".format(sharpenStr)} " +
+                    "clarity=${"%.2f".format(clarityStr)} " +
+                    "microContrast=${"%.2f".format(microContrastStr)}" +
                     lookLabel
             )
             lastBitmap = saturated
@@ -192,6 +207,7 @@ class MfsCapturePipeline(
         val startTime = System.currentTimeMillis()
         val totalFrames = config.frameCount
         val capturedCount = AtomicInteger(0)
+        Log.d(TAG, "[MFS] Burst started: $totalFrames frames, gap=${config.frameGapMs}ms")
         val frames = coroutineScope {
             val deferred = (0 until totalFrames).map { i ->
                 async {
@@ -199,8 +215,17 @@ class MfsCapturePipeline(
                         kotlinx.coroutines.delay(config.frameGapMs)
                     }
                     checkCancelled()
-                    val frame = captureSingleFrame(imageCapture, executor, i)
+                    val frame = try {
+                        withTimeout(10_000L) {
+                            captureSingleFrame(imageCapture, executor, i)
+                        }
+                    } catch (e: TimeoutCancellationException) {
+                        Log.e(TAG, "[MFS] Frame $i timed out after 10s")
+                        null
+                    }
                     val completed = capturedCount.incrementAndGet()
+                    Log.d(TAG, "[MFS] Frame $completed/$totalFrames captured" +
+                        if (frame != null) "" else " (null)")
                     progressCallback?.onProgress(MfsStage.CAPTURING, completed, totalFrames)
                     frame
                 }
@@ -208,7 +233,7 @@ class MfsCapturePipeline(
             deferred.mapNotNull { it.await() }
         }
         val elapsed = System.currentTimeMillis() - startTime
-        Log.d(TAG, "Captured ${frames.size}/${totalFrames} frames in ${elapsed}ms")
+        Log.d(TAG, "[MFS] Burst complete: ${frames.size}/$totalFrames frames in ${elapsed}ms")
         frames
     }
 

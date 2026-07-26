@@ -448,11 +448,12 @@ class FrameMerger {
                 val baseGaussianB = (gaussianSumB / gaussianTotalW).toInt().coerceIn(0, 255)
 
                 val edgeActivity = 1f - (bilateralTotalW / gaussianTotalW)
-                val adjustedEdgeActivity = (edgeActivity - noiseThreshold * 0.3f).coerceAtLeast(0f)
-                val t = (adjustedEdgeActivity / 0.4f).coerceAtMost(1f)
+                val adjustedEdgeActivity = (edgeActivity - noiseThreshold * 0.2f).coerceAtLeast(0f)
+                val t = (adjustedEdgeActivity / 0.5f).coerceAtMost(1f)
 
-                val denoiseGain = (1f - t) * denoiseStrength
-                val sharpenGain = t * sharpenStrength
+                val textureMask = (t * t * (3f - 2f * t))
+                val denoiseGain = (1f - textureMask) * denoiseStrength
+                val sharpenGain = textureMask * sharpenStrength
 
                 val outR = (cr + denoiseGain * (baseBilateralR - cr) + sharpenGain * (cr - baseGaussianR))
                     .toInt().coerceIn(0, 255)
@@ -618,6 +619,8 @@ class FrameMerger {
         bitmap.getPixels(src, 0, w, 0, 0, w, h)
         val dst = IntArray(w * h)
 
+        val vibranceBoost = (factor - 1f).coerceAtLeast(0f)
+
         for (i in src.indices) {
             val r = src[i] shr 16 and 0xFF
             val g = src[i] shr 8 and 0xFF
@@ -625,9 +628,17 @@ class FrameMerger {
 
             val gray = (r * 77 + g * 150 + b * 29) shr 8
 
-            val nr = ((r - gray) * factor + gray).toInt().coerceIn(0, 255)
-            val ng = ((g - gray) * factor + gray).toInt().coerceIn(0, 255)
-            val nb = ((b - gray) * factor + gray).toInt().coerceIn(0, 255)
+            val maxC = maxOf(r, g, b)
+            val minC = minOf(r, g, b)
+            val pixelSat = if (maxC > 0) (maxC - minC).toFloat() / maxC else 0f
+
+            val protectHigh = (1f - pixelSat).coerceIn(0.3f, 1f)
+            val boostLow = (1f - pixelSat).coerceIn(0f, 0.7f)
+            val effectiveFactor = 1f + vibranceBoost * (0.6f * protectHigh + 0.4f * boostLow)
+
+            val nr = ((r - gray) * effectiveFactor + gray).toInt().coerceIn(0, 255)
+            val ng = ((g - gray) * effectiveFactor + gray).toInt().coerceIn(0, 255)
+            val nb = ((b - gray) * effectiveFactor + gray).toInt().coerceIn(0, 255)
 
             dst[i] = (0xFF shl 24) or (nr shl 16) or (ng shl 8) or nb
         }
@@ -653,22 +664,81 @@ class FrameMerger {
         }
 
         val blurRadius = 3
-        val blurredLum = IntArray(w * h)
+        val blurredLum = separableBoxBlur(lum, w, h, blurRadius)
+
+        val dst = IntArray(w * h)
+        for (i in src.indices) {
+            val r = src[i] shr 16 and 0xFF
+            val g = src[i] shr 8 and 0xFF
+            val b = src[i] and 0xFF
+            val origLum = lum[i]
+            val blurred = blurredLum[i]
+            val detail = origLum - blurred
+            val gain = strength * detail
+
+            val nr = (r + gain).toInt().coerceIn(0, 255)
+            val ng = (g + gain).toInt().coerceIn(0, 255)
+            val nb = (b + gain).toInt().coerceIn(0, 255)
+
+            dst[i] = (0xFF shl 24) or (nr shl 16) or (ng shl 8) or nb
+        }
+
+        val result = Bitmap.createBitmap(w, h, Config.ARGB_8888)
+        result.setPixels(dst, 0, w, 0, 0, w, h)
+        return result
+    }
+
+    private fun separableBoxBlur(src: IntArray, w: Int, h: Int, radius: Int): IntArray {
+        val tmp = IntArray(w * h)
+        val dst = IntArray(w * h)
+
         for (y in 0 until h) {
+            val rowBase = y * w
             for (x in 0 until w) {
                 var sum = 0
                 var count = 0
-                for (dy in -blurRadius..blurRadius) {
-                    for (dx in -blurRadius..blurRadius) {
-                        val ny = (y + dy).coerceIn(0, h - 1)
-                        val nx = (x + dx).coerceIn(0, w - 1)
-                        sum += lum[ny * w + nx]
-                        count++
-                    }
+                for (dx in -radius..radius) {
+                    val nx = (x + dx).coerceIn(0, w - 1)
+                    sum += src[rowBase + nx]
+                    count++
                 }
-                blurredLum[y * w + x] = sum / count
+                tmp[rowBase + x] = sum / count
             }
         }
+
+        for (x in 0 until w) {
+            for (y in 0 until h) {
+                var sum = 0
+                var count = 0
+                for (dy in -radius..radius) {
+                    val ny = (y + dy).coerceIn(0, h - 1)
+                    sum += tmp[ny * w + x]
+                    count++
+                }
+                dst[y * w + x] = sum / count
+            }
+        }
+
+        return dst
+    }
+
+    fun applyClarity(bitmap: Bitmap, strength: Float): Bitmap {
+        if (strength <= 0f) return bitmap
+        val w = bitmap.width
+        val h = bitmap.height
+        val src = IntArray(w * h)
+        bitmap.getPixels(src, 0, w, 0, 0, w, h)
+
+        val lum = IntArray(w * h)
+        for (i in src.indices) {
+            val r = src[i] shr 16 and 0xFF
+            val g = src[i] shr 8 and 0xFF
+            val b = src[i] and 0xFF
+            lum[i] = (r * 77 + g * 150 + b * 29) shr 8
+        }
+
+        val blurRadius = 3
+        val blurredLum = separableBoxBlur(lum, w, h, blurRadius)
 
         val dst = IntArray(w * h)
         for (i in src.indices) {

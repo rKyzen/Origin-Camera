@@ -110,6 +110,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 
 private const val TAG = "CameraXCameraSystem"
 
@@ -736,6 +738,26 @@ class CameraXCameraSystem(
         }
         val executor = ContextCompat.getMainExecutor(application)
 
+        val watchdogJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            kotlinx.coroutines.delay(30_000L)
+            val stuckState = currentCameraState.value.mfsState
+            if (stuckState !is MfsState.Idle && stuckState !is MfsState.Saved &&
+                stuckState !is MfsState.Failed
+            ) {
+                Log.e(TAG, "[MFS] Watchdog: state stuck at $stuckState for 30s, force-recovering")
+                pipeline.cancel()
+                currentCameraState.update {
+                    it.copy(mfsState = MfsState.Failed("MFS timed out (watchdog)"))
+                }
+                kotlinx.coroutines.delay(1500L)
+                currentCameraState.update {
+                    if (it.mfsState is MfsState.Failed) {
+                        it.copy(mfsState = MfsState.Idle)
+                    } else it
+                }
+            }
+        }
+
         val progressCallback = MfsCapturePipeline.MfsProgressCallback { stage, captured, total ->
             val mfsState: MfsState = when (stage) {
                 MfsCapturePipeline.MfsStage.CAPTURING ->
@@ -748,10 +770,17 @@ class CameraXCameraSystem(
         }
 
         val result = try {
-            pipeline.captureAndMerge(
-                imageCaptureUseCase, executor, config, progressCallback
-            )
+            withTimeout(30_000L) {
+                pipeline.captureAndMerge(
+                    imageCaptureUseCase, executor, config, progressCallback
+                )
+            }
+        } catch (e: TimeoutCancellationException) {
+            Log.e(TAG, "[MFS] Pipeline timed out after 30s", e)
+            pipeline.cancel()
+            Result.failure(RuntimeException("MFS pipeline timed out"))
         } finally {
+            watchdogJob.cancel()
             currentMfsPipeline = null
             mfsCapturing.set(false)
         }
@@ -760,7 +789,9 @@ class CameraXCameraSystem(
             onSuccess = { bitmap ->
                 currentCameraState.update { it.copy(mfsState = MfsState.Saving) }
                 try {
-                    val savedUri = saveMfsBitmap(bitmap, contentResolver, saveLocation)
+                    val savedUri = withTimeout(10_000L) {
+                        saveMfsBitmap(bitmap, contentResolver, saveLocation)
+                    }
                     currentCameraState.update { it.copy(mfsState = MfsState.Saved) }
                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
                         kotlinx.coroutines.delay(1500L)
@@ -967,25 +998,25 @@ class CameraXCameraSystem(
         val isLowLight = lightLevel == com.google.jetpackcamera.core.camera.mfs.LightLevel.VERY_LOW ||
             lightLevel == com.google.jetpackcamera.core.camera.mfs.LightLevel.LOW || normalizedIso > 0.5f
         val isTelephoto = zoomFactor > 3f
-        val brightness = if (isLowLight) 0.42f else 0.58f
-        val contrast = if (isLowLight) 0.22f else 0.20f
-        val saturation = if (isLowLight) 1.28f else 1.15f
-        val baseSharpness = 0.50f - normalizedIso * 0.25f + zoomNorm * 0.15f
+        val brightness = if (isLowLight) 0.44f else 0.58f
+        val contrast = if (isLowLight) 0.24f else 0.22f
+        val saturation = if (isLowLight) 1.35f else 1.22f
+        val baseSharpness = 0.40f - normalizedIso * 0.20f + zoomNorm * 0.12f
         val sharpness = if (isTelephoto) {
-            (baseSharpness + 0.1f).coerceAtMost(0.9f)
+            (baseSharpness + 0.08f).coerceAtMost(0.80f)
         } else {
-            baseSharpness.coerceIn(0.25f, 0.85f)
+            baseSharpness.coerceIn(0.20f, 0.75f)
         }
         val noiseReduction = if (isLowLight) {
-            (normalizedIso * 0.35f).coerceIn(0.1f, 0.4f)
+            (normalizedIso * 0.15f).coerceIn(0.04f, 0.18f)
         } else {
-            (normalizedIso * 0.15f).coerceIn(0.0f, 0.15f)
+            (normalizedIso * 0.06f).coerceIn(0.0f, 0.06f)
         }
         return LookProfile(
             brightness = brightness,
             contrast = contrast,
             saturation = saturation,
-            sharpness = sharpness.coerceIn(0.25f, 0.85f),
+            sharpness = sharpness.coerceIn(0.20f, 0.75f),
             noiseReduction = noiseReduction
         )
     }

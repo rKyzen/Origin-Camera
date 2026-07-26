@@ -137,6 +137,7 @@ fun PreviewLayout(
     onGalleryClick: () -> Unit = {},
     onFiltersClick: () -> Unit = {},
     onEffectsClick: () -> Unit = {},
+    isMfsInProgress: Boolean = false,
     deviceOrientation: Int = ORIENTATION_UNKNOWN,
     isQuickControlsExpanded: Boolean = false,
     quickControlsTray: @Composable () -> Unit = {},
@@ -230,7 +231,7 @@ fun PreviewLayout(
             // ── Shutter / Back toggle ──────────────────────────────────
             Box(
                 modifier = Modifier
-                    .let { if (isQuickControlsExpanded) it else it.offset(y = (-39).dp) }
+                    .let { if (isQuickControlsExpanded) it else it.offset(y = (-50).dp) }
                     .size(width = 132.dp, height = 86.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -273,7 +274,9 @@ fun PreviewLayout(
                     modifier = Modifier.padding(top = 8.dp),
                     onGalleryClick = onGalleryClick,
                     onFiltersClick = onFiltersClick,
-                    onEffectsClick = onEffectsClick
+                    onEffectsClick = onEffectsClick,
+                    onCameraSwitchClick = onFlipLens,
+                    isCameraSwitchEnabled = !isMfsInProgress
                 )
             }
         }
@@ -538,8 +541,17 @@ fun BottomToolbar(
     modifier: Modifier = Modifier,
     onGalleryClick: () -> Unit = {},
     onFiltersClick: () -> Unit = {},
-    onEffectsClick: () -> Unit = {}
+    onEffectsClick: () -> Unit = {},
+    onCameraSwitchClick: () -> Unit = {},
+    isCameraSwitchEnabled: Boolean = true
 ) {
+    var cameraSwitchRotation by remember { mutableFloatStateOf(0f) }
+    val rotation by animateFloatAsState(
+        targetValue = cameraSwitchRotation,
+        animationSpec = tween(durationMillis = 300, easing = EaseOutExpo),
+        label = "cameraSwitchRotation"
+    )
+
     Row(modifier = modifier
             .clip(RoundedCornerShape(20.dp)).background(ToolbarBg)
             .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -566,6 +578,28 @@ fun BottomToolbar(
             modifier = Modifier
                 .size(35.dp)
                 .clickable(onClick = onEffectsClick)
+        )
+        Image(
+            painter = painterResource(R.drawable.ic_cameraswitch),
+            contentDescription = "Switch camera",
+            modifier = Modifier
+                .size(35.dp)
+                .graphicsLayer { rotationZ = rotation }
+                .then(
+                    if (isCameraSwitchEnabled) {
+                        Modifier.clickable {
+                            cameraSwitchRotation += 180f
+                            onCameraSwitchClick()
+                        }
+                    } else {
+                        Modifier
+                    }
+                ),
+            colorFilter = if (isCameraSwitchEnabled) {
+                ColorFilter.tint(Color.White)
+            } else {
+                ColorFilter.tint(Color.White.copy(alpha = 0.3f))
+            }
         )
     }
 }

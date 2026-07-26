@@ -16,8 +16,11 @@ data class MfsConfig(
     val preFilterStrength: Float,
     val denoiseStrength: Float,
     val sharpenStrength: Float,
+    val clarityStrength: Float = 0f,
+    val microContrastBoost: Float = 0f,
     val processingScale: Float = 1.0f,
-    val lookProfile: LookProfile? = null
+    val lookProfile: LookProfile? = null,
+    val zoomRatio: Float = 1f
 ) {
     companion object {
         private const val REFERENCE_MP = 12f
@@ -66,15 +69,13 @@ data class MfsConfig(
                 else -> 0.0f
             }
 
-            val denoiseStrength = when {
-                liveIso != null && liveIso > 1600 -> 0.3f
-                liveIso != null && liveIso > 800 -> 0.15f
-                lightLevel == LightLevel.VERY_LOW -> 0.25f
-                lightLevel == LightLevel.LOW -> 0.1f
-                else -> 0.0f
-            }
+            val denoiseStrength = computeDenoiseStrength(zoomFactor, lightLevel, liveIso)
 
             val sharpenStrength = computeSharpenStrength(zoomFactor, lightLevel, liveIso)
+
+            val clarityStrength = computeClarityStrength(zoomFactor, lightLevel, liveIso)
+
+            val microContrastBoost = computeMicroContrastBoost(zoomFactor)
 
             val processingScale = MfsResolutionPolicy.resolveScale(
                 sensorMp = sensorMP,
@@ -97,7 +98,10 @@ data class MfsConfig(
                 preFilterStrength = preFilterStrength,
                 denoiseStrength = denoiseStrength,
                 sharpenStrength = sharpenStrength,
-                processingScale = processingScale
+                clarityStrength = clarityStrength,
+                microContrastBoost = microContrastBoost,
+                processingScale = processingScale,
+                zoomRatio = zoomFactor
             )
         }
 
@@ -131,33 +135,87 @@ data class MfsConfig(
             return rawGap.coerceIn(MIN_FRAME_GAP_MS, maxGap)
         }
 
+        private fun computeDenoiseStrength(
+            zoomFactor: Float,
+            lightLevel: LightLevel,
+            liveIso: Int?
+        ): Float {
+            var baseDenoise = when {
+                liveIso != null && liveIso > 1600 -> 0.12f
+                liveIso != null && liveIso > 800 -> 0.07f
+                lightLevel == LightLevel.VERY_LOW -> 0.10f
+                lightLevel == LightLevel.LOW -> 0.04f
+                else -> 0.0f
+            }
+
+            val zoomNoiseBoost = ((sqrt(zoomFactor.coerceAtLeast(1f)) - 1f) * 0.03f)
+                .coerceIn(0f, 0.08f)
+            baseDenoise += zoomNoiseBoost
+
+            return baseDenoise.coerceIn(0f, 0.3f)
+        }
+
         private fun computeSharpenStrength(
             zoomFactor: Float,
             lightLevel: LightLevel,
             liveIso: Int?
         ): Float {
-            var strength = 0.48f
+            val baseSharpen = 0.30f
 
-            val zoomBoost = (sqrt(zoomFactor.coerceAtLeast(1f)) - 1f) * 0.3f
-            strength += zoomBoost.coerceIn(0f, 0.4f)
+            val zoomBoost = ((sqrt(zoomFactor.coerceAtLeast(1f)) - 1f) * 0.20f)
+                .coerceIn(0f, 0.35f)
+            var strength = baseSharpen + zoomBoost
 
             val noisePenalty = when {
                 liveIso != null -> when {
-                    liveIso > 3200 -> 0.35f
-                    liveIso > 1600 -> 0.25f
-                    liveIso > 800 -> 0.15f
-                    liveIso > 400 -> 0.05f
+                    liveIso > 3200 -> 0.25f
+                    liveIso > 1600 -> 0.18f
+                    liveIso > 800 -> 0.10f
+                    liveIso > 400 -> 0.03f
                     else -> 0f
                 }
                 else -> when (lightLevel) {
-                    LightLevel.VERY_LOW -> 0.3f
-                    LightLevel.LOW -> 0.15f
+                    LightLevel.VERY_LOW -> 0.22f
+                    LightLevel.LOW -> 0.10f
                     else -> 0f
                 }
             }
             strength -= noisePenalty
 
-            return strength.coerceIn(0.15f, 0.9f)
+            return strength.coerceIn(0.10f, 0.70f)
+        }
+
+        private fun computeMicroContrastBoost(zoomFactor: Float): Float {
+            return ((zoomFactor - 1f) * 0.04f).coerceIn(0f, 0.15f)
+        }
+
+        private fun computeClarityStrength(
+            zoomFactor: Float,
+            lightLevel: LightLevel,
+            liveIso: Int?
+        ): Float {
+            var baseClarity = 0.50f
+
+            val zoomBoost = ((sqrt(zoomFactor.coerceAtLeast(1f)) - 1f) * 0.10f)
+                .coerceIn(0f, 0.18f)
+            baseClarity += zoomBoost
+
+            val noisePenalty = when {
+                liveIso != null -> when {
+                    liveIso > 3200 -> 0.25f
+                    liveIso > 1600 -> 0.15f
+                    liveIso > 800 -> 0.08f
+                    else -> 0f
+                }
+                else -> when (lightLevel) {
+                    LightLevel.VERY_LOW -> 0.22f
+                    LightLevel.LOW -> 0.12f
+                    else -> 0f
+                }
+            }
+            baseClarity -= noisePenalty
+
+            return baseClarity.coerceIn(0.10f, 0.80f)
         }
     }
 }
